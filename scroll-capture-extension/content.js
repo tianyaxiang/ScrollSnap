@@ -74,6 +74,11 @@
 
   // 选区容器（用于隔离样式）
   let selectionContainer = null;
+  
+  // 标记当前选区是否在滚动容器内
+  let isSelectingInContainer = false;
+  // 缓存选区开始时的容器引用
+  let activeContainer = null;
 
   /**
    * 创建选区覆盖层 UI（支持滚动）
@@ -227,6 +232,8 @@
     isSelecting = false;
     hasStartedSelection = false;
     scrollableContainer = null;
+    isSelectingInContainer = false;
+    activeContainer = null;
   }
 
   /**
@@ -322,18 +329,45 @@
    * 获取当前滚动位置
    */
   function getCurrentScroll() {
-    const container = detectScrollableContainer();
-    if (container) {
-      return { x: container.scrollLeft, y: container.scrollTop };
+    if (isSelectingInContainer && activeContainer) {
+      return { x: activeContainer.scrollLeft, y: activeContainer.scrollTop };
     }
     return { x: window.scrollX, y: window.scrollY };
   }
 
   /**
+   * 检查点击位置是否在容器内，并设置选区模式
+   */
+  function checkAndSetContainerMode(clientX, clientY) {
+    const container = detectScrollableContainer();
+    if (container) {
+      const containerRect = container.getBoundingClientRect();
+      if (clientX >= containerRect.left && clientX <= containerRect.right &&
+          clientY >= containerRect.top && clientY <= containerRect.bottom) {
+        isSelectingInContainer = true;
+        activeContainer = container;
+        return true;
+      }
+    }
+    isSelectingInContainer = false;
+    activeContainer = null;
+    return false;
+  }
+
+  /**
    * 将视口坐标转换为文档坐标
-   * 始终使用页面滚动位置，返回页面文档坐标
+   * 根据选区模式决定使用容器坐标还是页面坐标
    */
   function clientToDocCoords(clientX, clientY) {
+    if (isSelectingInContainer && activeContainer) {
+      const containerRect = activeContainer.getBoundingClientRect();
+      // 返回相对于容器内容的坐标
+      return {
+        x: clientX - containerRect.left + activeContainer.scrollLeft,
+        y: clientY - containerRect.top + activeContainer.scrollTop
+      };
+    }
+    // 使用页面文档坐标
     return {
       x: clientX + window.scrollX,
       y: clientY + window.scrollY
@@ -344,6 +378,14 @@
    * 将文档坐标转换为视口坐标
    */
   function docToClientCoords(docX, docY) {
+    if (isSelectingInContainer && activeContainer) {
+      const containerRect = activeContainer.getBoundingClientRect();
+      // 返回相对于视口的坐标
+      return {
+        x: containerRect.left + (docX - activeContainer.scrollLeft),
+        y: containerRect.top + (docY - activeContainer.scrollTop)
+      };
+    }
     return {
       x: docX - window.scrollX,
       y: docY - window.scrollY
@@ -354,9 +396,8 @@
    * 滚动到指定位置（支持内部容器）
    */
   function scrollTo(x, y) {
-    const container = detectScrollableContainer();
-    if (container) {
-      container.scrollTo({ top: y, left: x, behavior: 'instant' });
+    if (isSelectingInContainer && activeContainer) {
+      activeContainer.scrollTo({ top: y, left: x, behavior: 'instant' });
     } else {
       window.scrollTo({ top: y, left: x, behavior: 'instant' });
     }
@@ -366,9 +407,8 @@
    * 滚动指定距离（支持内部容器）
    */
   function scrollBy(deltaX, deltaY) {
-    const container = detectScrollableContainer();
-    if (container) {
-      container.scrollBy({ top: deltaY, left: deltaX, behavior: 'instant' });
+    if (isSelectingInContainer && activeContainer) {
+      activeContainer.scrollBy({ top: deltaY, left: deltaX, behavior: 'instant' });
     } else {
       window.scrollBy({ top: deltaY, left: deltaX, behavior: 'instant' });
     }
@@ -401,8 +441,13 @@
     
     // 重置滚动容器检测，确保每次选区都重新检测
     scrollableContainer = null;
+    isSelectingInContainer = false;
+    activeContainer = null;
     
-    // 计算文档坐标
+    // 先检测容器并设置选区模式（必须在 clientToDocCoords 之前调用）
+    checkAndSetContainerMode(e.clientX, e.clientY);
+    
+    // 计算文档坐标（会根据 isSelectingInContainer 决定使用哪种坐标系）
     const docCoords = clientToDocCoords(e.clientX, e.clientY);
     startDocX = docCoords.x;
     startDocY = docCoords.y;
@@ -417,7 +462,8 @@
     console.log('[ScrollCapture] onMouseDown:', {
       clientX: e.clientX, clientY: e.clientY,
       docX: startDocX, docY: startDocY,
-      container: detectScrollableContainer() ? 'found' : 'none'
+      isSelectingInContainer,
+      container: activeContainer ? 'found' : 'none'
     });
     
     // 显示选区框和信息（使用 !important 确保样式生效）
@@ -577,8 +623,8 @@
       return;
     }
 
-    // 获取滚动容器信息
-    const container = detectScrollableContainer();
+    // 获取滚动容器信息（使用选区开始时确定的容器）
+    const container = isSelectingInContainer ? activeContainer : null;
     const currentScroll = getCurrentScroll();
     let containerInfo = null;
     
@@ -602,6 +648,7 @@
     console.log('[ScrollCapture] onMouseUp:', {
       rect,
       currentScroll,
+      isSelectingInContainer,
       containerInfo: containerInfo ? {
         viewportTop: containerInfo.viewportTop,
         viewportLeft: containerInfo.viewportLeft,

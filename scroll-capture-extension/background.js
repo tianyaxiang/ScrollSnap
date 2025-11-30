@@ -595,8 +595,8 @@ async function handleMessage(message, sender) {
         params.viewportHeight,
         params.viewportWidth,
         params.devicePixelRatio || 1,
-        params.format,
-        params.quality,
+        params.format || 'png',
+        params.quality || 92,
         params.containerInfo,
         params.currentScroll // 传递当前滚动位置
       );
@@ -647,8 +647,13 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
       return { success: false, error: 'RESTRICTED_PAGE' };
     }
 
+    // 判断是否使用内部滚动容器
+    const useContainer = containerInfo && containerInfo.scrollHeight > containerInfo.clientHeight;
+    
     // 保存原始滚动位置
-    const originalScroll = await getPageScrollPosition(tabId);
+    const originalScroll = useContainer 
+      ? await getContainerScrollPosition(tabId)
+      : await getPageScrollPosition(tabId);
 
     // 选区信息（文档坐标，即相对于滚动内容的坐标）
     const selectionTop = rect.y;
@@ -661,8 +666,9 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
     let containerViewportTop = 0;
     let containerViewportLeft = 0;
     
-    if (containerInfo) {
-      effectiveViewportHeight = containerInfo.viewportHeight;
+    if (useContainer) {
+      // 使用 clientHeight 而不是 viewportHeight，因为 clientHeight 不包含 border
+      effectiveViewportHeight = containerInfo.clientHeight;
       containerViewportTop = containerInfo.viewportTop;
       containerViewportLeft = containerInfo.viewportLeft;
     }
@@ -675,33 +681,67 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
 
     if (!needsScrollCapture) {
       // 选区在单个视口内，直接截图裁剪
-      // 获取当前页面滚动位置
-      const currentScroll = await getPageScrollPosition(tabId);
+      // 使用 content.js 传递的滚动位置，如果没有则重新获取
+      const currentScroll = initialScroll || (useContainer 
+        ? await getContainerScrollPosition(tabId)
+        : await getPageScrollPosition(tabId));
       
-      // 计算选区在当前视口中的位置（页面文档坐标转视口坐标）
-      let cropX = selectionLeft - currentScroll.x;
-      let cropY = selectionTop - currentScroll.y;
+      // 计算选区在当前视口中的位置
+      let cropX, cropY;
+      if (useContainer) {
+        // 对于内部容器，选区坐标是相对于容器内容的
+        // 需要转换为视口坐标：容器位置 + (选区位置 - 容器滚动位置)
+        cropX = containerViewportLeft + (selectionLeft - currentScroll.x);
+        cropY = containerViewportTop + (selectionTop - currentScroll.y);
+      } else {
+        cropX = selectionLeft - currentScroll.x;
+        cropY = selectionTop - currentScroll.y;
+      }
 
       console.log('[captureScrollSelection] single viewport - initial:', {
         selectionLeft, selectionTop, selectionWidth, selectionHeight,
-        currentScroll,
+        currentScroll, useContainer,
+        containerViewportTop, containerViewportLeft,
         cropX, cropY,
         dpr
       });
 
       // 检查选区是否在当前视口内
-      if (cropY < 0 || cropY + selectionHeight > viewportHeight ||
-          cropX < 0 || cropX + selectionWidth > viewportWidth) {
-        // 选区不完全在视口内，需要滚动页面
+      const needsScroll = useContainer
+        ? (cropY < containerViewportTop || cropY + selectionHeight > containerViewportTop + effectiveViewportHeight)
+        : (cropY < 0 || cropY + selectionHeight > viewportHeight || cropX < 0 || cropX + selectionWidth > viewportWidth);
+      
+      console.log('[captureScrollSelection] needsScroll check:', {
+        needsScroll,
+        cropY, cropX,
+        selectionHeight, selectionWidth,
+        viewportHeight, viewportWidth
+      });
+        
+      if (needsScroll) {
+        // 选区不完全在视口内，需要滚动
         const targetScrollY = Math.max(0, selectionTop - 50);
         const targetScrollX = Math.max(0, selectionLeft - 50);
-        await scrollPageTo(tabId, targetScrollX, targetScrollY);
+        
+        if (useContainer) {
+          await scrollContainerTo(tabId, targetScrollX, targetScrollY);
+        } else {
+          await scrollPageTo(tabId, targetScrollX, targetScrollY);
+        }
         await delay(300);
         
-        // 重新获取滚动位置
-        const actualScroll = await getPageScrollPosition(tabId);
-        cropX = selectionLeft - actualScroll.x;
-        cropY = selectionTop - actualScroll.y;
+        // 重新获取滚动位置并计算裁剪坐标
+        const actualScroll = useContainer 
+          ? await getContainerScrollPosition(tabId)
+          : await getPageScrollPosition(tabId);
+          
+        if (useContainer) {
+          cropX = containerViewportLeft + (selectionLeft - actualScroll.x);
+          cropY = containerViewportTop + (selectionTop - actualScroll.y);
+        } else {
+          cropX = selectionLeft - actualScroll.x;
+          cropY = selectionTop - actualScroll.y;
+        }
 
         console.log('[captureScrollSelection] single viewport - after scroll:', {
           targetScrollY, actualScroll,
@@ -721,7 +761,11 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
       const croppedDataUrl = await cropImage(dataUrl, viewportRect, format, quality, dpr);
       
       // 恢复滚动位置
-      await scrollPageTo(tabId, originalScroll.x, originalScroll.y);
+      if (useContainer) {
+        await scrollContainerTo(tabId, originalScroll.x, originalScroll.y);
+      } else {
+        await scrollPageTo(tabId, originalScroll.x, originalScroll.y);
+      }
 
       return {
         success: true,
@@ -735,33 +779,66 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
 
     const screenshots = [];
     let capturedHeight = 0;
+    
+    // 使用有效视口高度作为每次捕获的步长
+    const stepHeight = useContainer ? effectiveViewportHeight : viewportHeight;
 
     while (capturedHeight < selectionHeight) {
       // 计算当前需要捕获的高度
       const remainingHeight = selectionHeight - capturedHeight;
-      const captureHeight = Math.min(viewportHeight, remainingHeight);
+      const captureHeight = Math.min(stepHeight, remainingHeight);
       
-      // 计算滚动位置：让选区的当前部分出现在视口顶部
+      // 计算滚动位置：让选区的当前部分出现在容器/视口顶部
       const targetScrollY = selectionTop + capturedHeight;
       
-      await scrollPageTo(tabId, 0, targetScrollY);
+      if (useContainer) {
+        await scrollContainerTo(tabId, 0, targetScrollY);
+      } else {
+        await scrollPageTo(tabId, 0, targetScrollY);
+      }
       await delay(550);
 
       // 获取实际滚动位置
-      const actualScroll = await getPageScrollPosition(tabId);
+      const actualScroll = useContainer 
+        ? await getContainerScrollPosition(tabId)
+        : await getPageScrollPosition(tabId);
       
       const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, captureOptions);
       
-      // 计算裁剪区域（页面文档坐标转视口坐标）
-      const cropX = selectionLeft - actualScroll.x;
-      const cropY = selectionTop + capturedHeight - actualScroll.y;
+      // 计算裁剪区域
+      // 关键：cropY 应该是选区当前部分在视口中的位置
+      let cropX, cropY;
+      if (useContainer) {
+        // 对于内部容器：
+        // 选区在容器内容中的位置是 selectionTop + capturedHeight
+        // 容器滚动了 actualScroll.y
+        // 所以选区在容器可视区域中的位置是 (selectionTop + capturedHeight) - actualScroll.y
+        // 再加上容器在视口中的位置 containerViewportTop
+        cropX = containerViewportLeft + (selectionLeft - actualScroll.x);
+        cropY = containerViewportTop + ((selectionTop + capturedHeight) - actualScroll.y);
+      } else {
+        // 对于页面滚动：
+        // 选区在文档中的位置是 selectionTop + capturedHeight
+        // 页面滚动了 actualScroll.y
+        // 所以选区在视口中的位置是 (selectionTop + capturedHeight) - actualScroll.y
+        cropX = selectionLeft - actualScroll.x;
+        cropY = (selectionTop + capturedHeight) - actualScroll.y;
+      }
 
       console.log('[captureScrollSelection] scroll capture:', {
         iteration: screenshots.length,
         capturedHeight, captureHeight, selectionHeight,
         targetScrollY, actualScroll,
-        cropX, cropY
+        useContainer, containerViewportTop,
+        cropX, cropY,
+        stepHeight
       });
+      
+      // 确保 cropY 不为负数（可能由于滚动不精确）
+      if (cropY < 0) {
+        console.warn('[captureScrollSelection] cropY is negative, adjusting');
+        cropY = 0;
+      }
       
       const cropRect = {
         x: cropX,
@@ -786,7 +863,11 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
     }
 
     // 恢复滚动位置
-    await scrollPageTo(tabId, originalScroll.x, originalScroll.y);
+    if (useContainer) {
+      await scrollContainerTo(tabId, originalScroll.x, originalScroll.y);
+    } else {
+      await scrollPageTo(tabId, originalScroll.x, originalScroll.y);
+    }
     await sendMessageToTab(tabId, { action: 'hideProgress' });
 
     // 拼接截图
@@ -806,6 +887,224 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
     } catch (e) {}
     return { success: false, error: error.message };
   }
+}
+
+/**
+ * 查找可滚动容器的通用函数（在页面上下文中执行）
+ */
+function findScrollableContainerScript() {
+  const commonSelectors = [
+    '[data-is-streaming]',
+    'main[class*="overflow"]',
+    'div[class*="overflow-y-auto"]',
+    'div[class*="overflow-auto"]',
+    '[role="main"]',
+    'main',
+    '.main-content',
+    '#main-content',
+    '.chat-messages',
+    '.messages-container',
+    '.conversation',
+  ];
+
+  function isScrollable(el) {
+    if (!el) return false;
+    const style = window.getComputedStyle(el);
+    const overflowY = style.overflowY;
+    return (overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 10;
+  }
+
+  // 首先尝试常见选择器
+  for (const selector of commonSelectors) {
+    try {
+      const elements = document.querySelectorAll(selector);
+      for (const el of elements) {
+        if (isScrollable(el)) {
+          return el;
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 如果没找到，遍历查找最大的可滚动容器
+  const allElements = document.querySelectorAll('div, main, section, article');
+  let bestContainer = null;
+  let bestScore = 0;
+
+  for (const el of allElements) {
+    if (isScrollable(el)) {
+      const rect = el.getBoundingClientRect();
+      const visibleArea = rect.width * rect.height;
+      const viewportArea = window.innerWidth * window.innerHeight;
+      const areaRatio = visibleArea / viewportArea;
+      const scrollableHeight = el.scrollHeight - el.clientHeight;
+      
+      if (areaRatio > 0.3 && scrollableHeight > 100) {
+        const score = scrollableHeight * areaRatio;
+        if (score > bestScore) {
+          bestScore = score;
+          bestContainer = el;
+        }
+      }
+    }
+  }
+
+  return bestContainer;
+}
+
+/**
+ * 获取内部滚动容器的滚动位置
+ */
+async function getContainerScrollPosition(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        // 内联容器查找逻辑
+        const commonSelectors = [
+          '[data-is-streaming]',
+          'main[class*="overflow"]',
+          'div[class*="overflow-y-auto"]',
+          'div[class*="overflow-auto"]',
+          '[role="main"]',
+          'main',
+          '.main-content',
+          '#main-content',
+          '.chat-messages',
+          '.messages-container',
+          '.conversation',
+        ];
+
+        function isScrollable(el) {
+          if (!el) return false;
+          const style = window.getComputedStyle(el);
+          const overflowY = style.overflowY;
+          return (overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 10;
+        }
+
+        // 首先尝试常见选择器
+        for (const selector of commonSelectors) {
+          try {
+            const elements = document.querySelectorAll(selector);
+            for (const el of elements) {
+              if (isScrollable(el)) {
+                return { x: el.scrollLeft, y: el.scrollTop };
+              }
+            }
+          } catch (e) {}
+        }
+
+        // 如果没找到，遍历查找最大的可滚动容器
+        const allElements = document.querySelectorAll('div, main, section, article');
+        let bestContainer = null;
+        let bestScore = 0;
+
+        for (const el of allElements) {
+          if (isScrollable(el)) {
+            const rect = el.getBoundingClientRect();
+            const visibleArea = rect.width * rect.height;
+            const viewportArea = window.innerWidth * window.innerHeight;
+            const areaRatio = visibleArea / viewportArea;
+            const scrollableHeight = el.scrollHeight - el.clientHeight;
+            
+            if (areaRatio > 0.3 && scrollableHeight > 100) {
+              const score = scrollableHeight * areaRatio;
+              if (score > bestScore) {
+                bestScore = score;
+                bestContainer = el;
+              }
+            }
+          }
+        }
+
+        if (bestContainer) {
+          return { x: bestContainer.scrollLeft, y: bestContainer.scrollTop };
+        }
+
+        return { x: window.scrollX, y: window.scrollY };
+      }
+    });
+    return results[0]?.result || { x: 0, y: 0 };
+  } catch (error) {
+    return { x: 0, y: 0 };
+  }
+}
+
+/**
+ * 滚动内部容器到指定位置
+ */
+async function scrollContainerTo(tabId, x, y) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (scrollX, scrollY) => {
+      // 内联容器查找逻辑
+      const commonSelectors = [
+        '[data-is-streaming]',
+        'main[class*="overflow"]',
+        'div[class*="overflow-y-auto"]',
+        'div[class*="overflow-auto"]',
+        '[role="main"]',
+        'main',
+        '.main-content',
+        '#main-content',
+        '.chat-messages',
+        '.messages-container',
+        '.conversation',
+      ];
+
+      function isScrollable(el) {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const overflowY = style.overflowY;
+        return (overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 10;
+      }
+
+      // 首先尝试常见选择器
+      for (const selector of commonSelectors) {
+        try {
+          const elements = document.querySelectorAll(selector);
+          for (const el of elements) {
+            if (isScrollable(el)) {
+              el.scrollTo({ top: scrollY, left: scrollX, behavior: 'instant' });
+              return;
+            }
+          }
+        } catch (e) {}
+      }
+
+      // 如果没找到，遍历查找最大的可滚动容器
+      const allElements = document.querySelectorAll('div, main, section, article');
+      let bestContainer = null;
+      let bestScore = 0;
+
+      for (const el of allElements) {
+        if (isScrollable(el)) {
+          const rect = el.getBoundingClientRect();
+          const visibleArea = rect.width * rect.height;
+          const viewportArea = window.innerWidth * window.innerHeight;
+          const areaRatio = visibleArea / viewportArea;
+          const scrollableHeight = el.scrollHeight - el.clientHeight;
+          
+          if (areaRatio > 0.3 && scrollableHeight > 100) {
+            const score = scrollableHeight * areaRatio;
+            if (score > bestScore) {
+              bestScore = score;
+              bestContainer = el;
+            }
+          }
+        }
+      }
+
+      if (bestContainer) {
+        bestContainer.scrollTo({ top: scrollY, left: scrollX, behavior: 'instant' });
+        return;
+      }
+
+      // 如果没找到容器，回退到 window 滚动
+      window.scrollTo({ top: scrollY, left: scrollX, behavior: 'instant' });
+    },
+    args: [x, y]
+  });
 }
 
 /**
@@ -921,10 +1220,13 @@ async function stitchSelectionScreenshots(screenshots, totalWidth, totalHeight, 
   const canvas = new OffscreenCanvas(totalWidth, totalHeight);
   const ctx = canvas.getContext('2d');
 
+  let currentY = 0;
   for (const screenshot of screenshots) {
     const img = await createImageBitmap(await fetch(screenshot.dataUrl).then(r => r.blob()));
-    // 使用记录的 y 位置，而不是简单累加
-    ctx.drawImage(img, 0, screenshot.y);
+    console.log('[stitchSelectionScreenshots] drawing at y:', currentY, 'img size:', img.width, 'x', img.height);
+    // 使用实际图片高度来计算下一个位置，而不是预期高度
+    ctx.drawImage(img, 0, currentY);
+    currentY += img.height;
   }
 
   const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
@@ -997,7 +1299,21 @@ async function cropImage(dataUrl, rect, format, quality, dpr = 1) {
   let srcW = Math.round(rect.width * dpr);
   let srcH = Math.round(rect.height * dpr);
 
+  console.log('[cropImage] input rect:', rect, 'dpr:', dpr);
+  console.log('[cropImage] img:', img.width, 'x', img.height, 'initial crop:', srcX, srcY, srcW, srcH);
+
   // 边界检查：确保裁剪区域在图片范围内
+  // 首先检查起点是否超出范围
+  if (srcX >= img.width) {
+    console.warn('[cropImage] srcX out of bounds, clamping to', img.width - srcW);
+    srcX = Math.max(0, img.width - srcW);
+  }
+  if (srcY >= img.height) {
+    console.warn('[cropImage] srcY out of bounds, clamping to', img.height - srcH);
+    srcY = Math.max(0, img.height - srcH);
+  }
+  
+  // 处理负坐标
   if (srcX < 0) {
     srcW += srcX; // 减少宽度
     srcX = 0;
@@ -1006,6 +1322,8 @@ async function cropImage(dataUrl, rect, format, quality, dpr = 1) {
     srcH += srcY; // 减少高度
     srcY = 0;
   }
+  
+  // 确保不超出右边界和下边界
   if (srcX + srcW > img.width) {
     srcW = img.width - srcX;
   }
@@ -1016,8 +1334,10 @@ async function cropImage(dataUrl, rect, format, quality, dpr = 1) {
   // 确保尺寸有效
   srcW = Math.max(1, srcW);
   srcH = Math.max(1, srcH);
+  srcX = Math.max(0, Math.min(srcX, img.width - 1));
+  srcY = Math.max(0, Math.min(srcY, img.height - 1));
 
-  console.log('[cropImage] img:', img.width, 'x', img.height, 'crop:', srcX, srcY, srcW, srcH);
+  console.log('[cropImage] final crop:', srcX, srcY, srcW, srcH);
 
   const canvas = new OffscreenCanvas(srcW, srcH);
   const ctx = canvas.getContext('2d');
