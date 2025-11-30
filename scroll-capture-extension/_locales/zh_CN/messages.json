@@ -150,5 +150,21 @@
   "guideStart": {
     "message": "开始使用",
     "description": "Guide start button"
+  },
+  "settingLanguage": {
+    "message": "界面语言",
+    "description": "Language setting label"
+  },
+  "langZhCN": {
+    "message": "简体中文",
+    "description": "Chinese language option"
+  },
+  "langEn": {
+    "message": "English",
+    "description": "English language option"
+  },
+  "languageChanged": {
+    "message": "语言已更改，重新打开扩展生效",
+    "description": "Language changed notification"
   }
 }

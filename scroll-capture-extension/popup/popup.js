@@ -40,6 +40,7 @@ const elements = {
   
   // Settings elements
   btnSettingsBack: document.getElementById('btn-settings-back'),
+  settingLanguage: document.getElementById('setting-language'),
   settingFormat: document.getElementById('setting-format'),
   settingQuality: document.getElementById('setting-quality'),
   qualityValue: document.getElementById('quality-value'),
@@ -64,7 +65,11 @@ const elements = {
 /**
  * Initialize popup UI
  */
-function init() {
+async function init() {
+  // 先初始化 i18n 系统
+  if (window.i18n && window.i18n.initI18n) {
+    await window.i18n.initI18n();
+  }
   bindEvents();
   applyI18n();
   loadSettings();
@@ -90,6 +95,7 @@ function bindEvents() {
   
   // Settings actions
   elements.btnSettingsBack.addEventListener('click', showMainMenu);
+  elements.settingLanguage.addEventListener('change', onLanguageChange);
   elements.settingFormat.addEventListener('change', onSettingFormatChange);
   elements.settingQuality.addEventListener('input', onQualityChange);
   
@@ -129,7 +135,12 @@ function applyI18n() {
  */
 async function loadSettings() {
   try {
-    const settings = await chrome.storage.sync.get(['defaultFormat', 'jpegQuality']);
+    const settings = await chrome.storage.sync.get(['defaultFormat', 'jpegQuality', 'language']);
+    
+    // 加载语言设置，默认中文
+    const language = settings.language || 'zh_CN';
+    elements.settingLanguage.value = language;
+    
     if (settings.defaultFormat) {
       state.selectedFormat = settings.defaultFormat;
       elements.formatSelect.value = settings.defaultFormat;
@@ -415,6 +426,20 @@ function onQualityChange() {
 }
 
 /**
+ * Handle language change
+ */
+async function onLanguageChange() {
+  const language = elements.settingLanguage.value;
+  if (window.i18n && window.i18n.setLanguage) {
+    await window.i18n.setLanguage(language);
+    // 立即应用新语言
+    applyI18n();
+  } else {
+    chrome.storage.sync.set({ language });
+  }
+}
+
+/**
  * Update quality setting visibility based on format
  * @param {string} format - Selected format
  */
@@ -494,6 +519,10 @@ function setButtonsDisabled(disabled) {
  * @returns {string}
  */
 function getMessage(key, fallback) {
+  // 优先使用自定义 i18n 系统
+  if (window.i18n && window.i18n.getMessage) {
+    return window.i18n.getMessage(key, fallback);
+  }
   const message = chrome.i18n.getMessage(key);
   return message || fallback;
 }

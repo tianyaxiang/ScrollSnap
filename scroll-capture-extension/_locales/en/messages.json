@@ -150,5 +150,21 @@
   "guideStart": {
     "message": "Get Started",
     "description": "Guide start button"
+  },
+  "settingLanguage": {
+    "message": "Language",
+    "description": "Language setting label"
+  },
+  "langZhCN": {
+    "message": "简体中文",
+    "description": "Chinese language option"
+  },
+  "langEn": {
+    "message": "English",
+    "description": "English language option"
+  },
+  "languageChanged": {
+    "message": "Language changed, reopen extension to apply",
+    "description": "Language changed notification"
   }
 }
