@@ -66,6 +66,9 @@
   let startDocY = 0;
   let currentDocX = 0;
   let currentDocY = 0;
+  // 记录开始时的视口坐标
+  let startViewportX = 0;
+  let startViewportY = 0;
   // 存储检测到的可滚动容器
   let scrollableContainer = null;
 
@@ -327,6 +330,27 @@
   }
 
   /**
+   * 将视口坐标转换为文档坐标
+   * 始终使用页面滚动位置，返回页面文档坐标
+   */
+  function clientToDocCoords(clientX, clientY) {
+    return {
+      x: clientX + window.scrollX,
+      y: clientY + window.scrollY
+    };
+  }
+
+  /**
+   * 将文档坐标转换为视口坐标
+   */
+  function docToClientCoords(docX, docY) {
+    return {
+      x: docX - window.scrollX,
+      y: docY - window.scrollY
+    };
+  }
+
+  /**
    * 滚动到指定位置（支持内部容器）
    */
   function scrollTo(x, y) {
@@ -378,12 +402,23 @@
     // 重置滚动容器检测，确保每次选区都重新检测
     scrollableContainer = null;
     
-    // 记录文档坐标（视口坐标 + 滚动偏移）
-    const scroll = getCurrentScroll();
-    startDocX = e.clientX + scroll.x;
-    startDocY = e.clientY + scroll.y;
+    // 计算文档坐标
+    const docCoords = clientToDocCoords(e.clientX, e.clientY);
+    startDocX = docCoords.x;
+    startDocY = docCoords.y;
+    
+    // 同时记录视口坐标，用于后续计算
+    startViewportX = e.clientX;
+    startViewportY = e.clientY;
+    
     currentDocX = startDocX;
     currentDocY = startDocY;
+
+    console.log('[ScrollCapture] onMouseDown:', {
+      clientX: e.clientX, clientY: e.clientY,
+      docX: startDocX, docY: startDocY,
+      container: detectScrollableContainer() ? 'found' : 'none'
+    });
     
     // 显示选区框和信息（使用 !important 确保样式生效）
     if (selectionBox) {
@@ -409,9 +444,9 @@
     if (!isSelecting) return;
 
     // 更新当前文档坐标
-    const scroll = getCurrentScroll();
-    currentDocX = e.clientX + scroll.x;
-    currentDocY = e.clientY + scroll.y;
+    const docCoords = clientToDocCoords(e.clientX, e.clientY);
+    currentDocX = docCoords.x;
+    currentDocY = docCoords.y;
 
     updateSelectionBox();
     
@@ -425,16 +460,16 @@
   function updateSelectionBox() {
     if (!selectionBox || !selectionInfo) return;
     
+    // 选区的文档坐标
     const left = Math.min(startDocX, currentDocX);
     const top = Math.min(startDocY, currentDocY);
     const width = Math.abs(currentDocX - startDocX);
     const height = Math.abs(currentDocY - startDocY);
 
-    const scroll = getCurrentScroll();
-
-    // 计算视口坐标（fixed定位需要视口坐标）
-    const viewLeft = left - scroll.x;
-    const viewTop = top - scroll.y;
+    // 将文档坐标转换为视口坐标（用于 fixed 定位的选区框）
+    const viewCoords = docToClientCoords(left, top);
+    const viewLeft = viewCoords.x;
+    const viewTop = viewCoords.y;
     
     // 选区框使用视口坐标（fixed定位）
     // 需要处理选区可能部分在视口外的情况
@@ -544,7 +579,9 @@
 
     // 获取滚动容器信息
     const container = detectScrollableContainer();
+    const currentScroll = getCurrentScroll();
     let containerInfo = null;
+    
     if (container) {
       const containerRect = container.getBoundingClientRect();
       containerInfo = {
@@ -562,7 +599,20 @@
       };
     }
 
-    // 发送选区信息到 background，使用文档坐标
+    console.log('[ScrollCapture] onMouseUp:', {
+      rect,
+      currentScroll,
+      containerInfo: containerInfo ? {
+        viewportTop: containerInfo.viewportTop,
+        viewportLeft: containerInfo.viewportLeft,
+        scrollTop: containerInfo.scrollTop,
+        scrollLeft: containerInfo.scrollLeft
+      } : null
+    });
+
+    // 发送选区信息到 background
+    // rect 使用的是文档坐标（相对于滚动内容的坐标）
+    // 同时传递当前滚动位置，以便 background 正确计算
     chrome.runtime.sendMessage({
       action: 'scrollSelectionComplete',
       rect: rect,
@@ -570,7 +620,8 @@
       viewportWidth: window.innerWidth,
       scrollHeight: container ? container.scrollHeight : Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
       devicePixelRatio: window.devicePixelRatio || 1,
-      containerInfo: containerInfo
+      containerInfo: containerInfo,
+      currentScroll: currentScroll
     });
 
     removeSelectionOverlay();

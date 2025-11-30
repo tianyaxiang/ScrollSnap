@@ -597,7 +597,8 @@ async function handleMessage(message, sender) {
         params.devicePixelRatio || 1,
         params.format,
         params.quality,
-        params.containerInfo // 传递容器信息
+        params.containerInfo,
+        params.currentScroll // 传递当前滚动位置
       );
       if (result.success) {
         await chrome.storage.local.set({
@@ -636,9 +637,10 @@ async function handleMessage(message, sender) {
  * @param {string} format
  * @param {number} quality
  * @param {object} containerInfo - 滚动容器信息（可选）
+ * @param {object} initialScroll - 选区完成时的滚动位置（可选）
  * @returns {Promise<object>}
  */
-async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth, dpr = 1, format = 'png', quality = 92, containerInfo = null) {
+async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth, dpr = 1, format = 'png', quality = 92, containerInfo = null, initialScroll = null) {
   try {
     const tab = await chrome.tabs.get(tabId);
     if (isRestrictedPage(tab.url)) {
@@ -646,16 +648,15 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
     }
 
     // 保存原始滚动位置
-    const originalScroll = await getScrollPosition(tabId, !!containerInfo);
+    const originalScroll = await getPageScrollPosition(tabId);
 
-    // 计算选区在文档中的位置
+    // 选区信息（文档坐标，即相对于滚动内容的坐标）
     const selectionTop = rect.y;
-    const selectionBottom = rect.y + rect.height;
     const selectionLeft = rect.x;
     const selectionWidth = rect.width;
     const selectionHeight = rect.height;
 
-    // 确定有效的视口高度（如果有容器，使用容器的可视高度）
+    // 确定有效的视口高度和容器偏移
     let effectiveViewportHeight = viewportHeight;
     let containerViewportTop = 0;
     let containerViewportLeft = 0;
@@ -674,22 +675,41 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
 
     if (!needsScrollCapture) {
       // 选区在单个视口内，直接截图裁剪
-      // 滚动到选区可见的位置
-      const targetScrollY = Math.max(0, selectionTop - 50);
-      await scrollToPositionEx(tabId, targetScrollY, !!containerInfo);
-      await delay(300);
+      // 获取当前页面滚动位置
+      const currentScroll = await getPageScrollPosition(tabId);
+      
+      // 计算选区在当前视口中的位置（页面文档坐标转视口坐标）
+      let cropX = selectionLeft - currentScroll.x;
+      let cropY = selectionTop - currentScroll.y;
 
-      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, captureOptions);
-      
-      // 计算选区在当前视口中的位置
-      let cropX = selectionLeft;
-      let cropY = selectionTop - targetScrollY;
-      
-      // 如果有容器，需要加上容器在视口中的偏移
-      if (containerInfo) {
-        cropX = containerViewportLeft + (selectionLeft - (containerInfo.scrollLeft || 0));
-        cropY = containerViewportTop + (selectionTop - targetScrollY);
+      console.log('[captureScrollSelection] single viewport - initial:', {
+        selectionLeft, selectionTop, selectionWidth, selectionHeight,
+        currentScroll,
+        cropX, cropY,
+        dpr
+      });
+
+      // 检查选区是否在当前视口内
+      if (cropY < 0 || cropY + selectionHeight > viewportHeight ||
+          cropX < 0 || cropX + selectionWidth > viewportWidth) {
+        // 选区不完全在视口内，需要滚动页面
+        const targetScrollY = Math.max(0, selectionTop - 50);
+        const targetScrollX = Math.max(0, selectionLeft - 50);
+        await scrollPageTo(tabId, targetScrollX, targetScrollY);
+        await delay(300);
+        
+        // 重新获取滚动位置
+        const actualScroll = await getPageScrollPosition(tabId);
+        cropX = selectionLeft - actualScroll.x;
+        cropY = selectionTop - actualScroll.y;
+
+        console.log('[captureScrollSelection] single viewport - after scroll:', {
+          targetScrollY, actualScroll,
+          cropX, cropY
+        });
       }
+      
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, captureOptions);
       
       const viewportRect = {
         x: cropX,
@@ -701,7 +721,7 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
       const croppedDataUrl = await cropImage(dataUrl, viewportRect, format, quality, dpr);
       
       // 恢复滚动位置
-      await scrollToPositionEx(tabId, originalScroll.y, !!containerInfo);
+      await scrollPageTo(tabId, originalScroll.x, originalScroll.y);
 
       return {
         success: true,
@@ -713,33 +733,35 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
     // 需要滚动截图
     await sendMessageToTab(tabId, { action: 'showProgress', percent: 0 });
 
-    // 计算需要截取的滚动段 - 不使用重叠，精确计算每段
     const screenshots = [];
     let capturedHeight = 0;
-    let scrollIndex = 0;
 
     while (capturedHeight < selectionHeight) {
-      // 计算当前需要捕获的区域
+      // 计算当前需要捕获的高度
       const remainingHeight = selectionHeight - capturedHeight;
-      const captureHeight = Math.min(effectiveViewportHeight, remainingHeight);
+      const captureHeight = Math.min(viewportHeight, remainingHeight);
       
       // 计算滚动位置：让选区的当前部分出现在视口顶部
       const targetScrollY = selectionTop + capturedHeight;
       
-      await scrollToPositionEx(tabId, targetScrollY, !!containerInfo);
+      await scrollPageTo(tabId, 0, targetScrollY);
       await delay(550);
 
+      // 获取实际滚动位置
+      const actualScroll = await getPageScrollPosition(tabId);
+      
       const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, captureOptions);
       
-      // 计算裁剪区域
-      let cropX = selectionLeft;
-      let cropY = 0; // 选区顶部对齐视口顶部
-      
-      if (containerInfo) {
-        // 容器内滚动：选区相对于容器的位置
-        cropX = containerViewportLeft + (selectionLeft - (containerInfo.scrollLeft || 0));
-        cropY = containerViewportTop;
-      }
+      // 计算裁剪区域（页面文档坐标转视口坐标）
+      const cropX = selectionLeft - actualScroll.x;
+      const cropY = selectionTop + capturedHeight - actualScroll.y;
+
+      console.log('[captureScrollSelection] scroll capture:', {
+        iteration: screenshots.length,
+        capturedHeight, captureHeight, selectionHeight,
+        targetScrollY, actualScroll,
+        cropX, cropY
+      });
       
       const cropRect = {
         x: cropX,
@@ -752,12 +774,11 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
       
       screenshots.push({
         dataUrl: croppedDataUrl,
-        y: capturedHeight * dpr, // 在最终图片中的Y位置
+        y: capturedHeight * dpr,
         height: captureHeight * dpr
       });
 
       capturedHeight += captureHeight;
-      scrollIndex++;
 
       // 更新进度
       const progress = Math.round((capturedHeight / selectionHeight) * 100);
@@ -765,7 +786,7 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
     }
 
     // 恢复滚动位置
-    await scrollToPositionEx(tabId, originalScroll.y, !!containerInfo);
+    await scrollPageTo(tabId, originalScroll.x, originalScroll.y);
     await sendMessageToTab(tabId, { action: 'hideProgress' });
 
     // 拼接截图
@@ -826,6 +847,34 @@ async function getScrollPosition(tabId, useContainer = false) {
   } catch (error) {
     return { x: 0, y: 0 };
   }
+}
+
+/**
+ * 获取页面滚动位置（只获取 window 滚动，不考虑容器）
+ */
+async function getPageScrollPosition(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => ({ x: window.scrollX, y: window.scrollY })
+    });
+    return results[0]?.result || { x: 0, y: 0 };
+  } catch (error) {
+    return { x: 0, y: 0 };
+  }
+}
+
+/**
+ * 滚动页面到指定位置（只滚动 window，不考虑容器）
+ */
+async function scrollPageTo(tabId, x, y) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (scrollX, scrollY) => {
+      window.scrollTo({ top: scrollY, left: scrollX, behavior: 'instant' });
+    },
+    args: [x, y]
+  });
 }
 
 /**
@@ -943,10 +992,32 @@ async function cropImage(dataUrl, rect, format, quality, dpr = 1) {
   const img = await createImageBitmap(blob);
 
   // 使用设备像素比计算实际像素坐标
-  const srcX = Math.round(rect.x * dpr);
-  const srcY = Math.round(rect.y * dpr);
-  const srcW = Math.round(rect.width * dpr);
-  const srcH = Math.round(rect.height * dpr);
+  let srcX = Math.round(rect.x * dpr);
+  let srcY = Math.round(rect.y * dpr);
+  let srcW = Math.round(rect.width * dpr);
+  let srcH = Math.round(rect.height * dpr);
+
+  // 边界检查：确保裁剪区域在图片范围内
+  if (srcX < 0) {
+    srcW += srcX; // 减少宽度
+    srcX = 0;
+  }
+  if (srcY < 0) {
+    srcH += srcY; // 减少高度
+    srcY = 0;
+  }
+  if (srcX + srcW > img.width) {
+    srcW = img.width - srcX;
+  }
+  if (srcY + srcH > img.height) {
+    srcH = img.height - srcY;
+  }
+
+  // 确保尺寸有效
+  srcW = Math.max(1, srcW);
+  srcH = Math.max(1, srcH);
+
+  console.log('[cropImage] img:', img.width, 'x', img.height, 'crop:', srcX, srcY, srcW, srcH);
 
   const canvas = new OffscreenCanvas(srcW, srcH);
   const ctx = canvas.getContext('2d');
