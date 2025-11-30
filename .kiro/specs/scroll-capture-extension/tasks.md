@@ -1,0 +1,85 @@
+# Implementation Plan
+
+- [x] 1. 项目初始化与基础配置
+  - [x] 1.1 创建项目目录结构和 manifest.json
+    - 创建 scroll-capture-extension 目录
+    - 配置 Manifest V3 基础信息、权限和图标
+    - _Requirements: 1.1, 5.1, 5.2, 5.3_
+  - [x] 1.2 创建扩展图标资源
+    - 创建 16x16、48x48、128x128 尺寸的 PNG 图标
+    - _Requirements: 6.1_
+
+- [x] 2. Background Service Worker 实现
+  - [x] 2.1 实现可视区域截图功能
+    - 使用 chrome.tabs.captureVisibleTab API 捕获当前视口
+    - 实现截图数据处理和格式转换
+    - _Requirements: 2.1, 2.2, 2.3_
+  - [x] 2.2 实现全页滚动截图功能
+    - 实现页面滚动控制逻辑
+    - 实现多张截图的拼接算法
+    - 处理进度回调通知
+    - _Requirements: 1.2, 1.3, 1.4_
+  - [x] 2.3 实现图片保存和剪贴板功能
+    - 使用 chrome.downloads API 实现文件下载
+    - 实现剪贴板写入功能
+    - 生成带时间戳的文件名
+    - _Requirements: 4.1, 4.2, 4.3, 4.4_
+  - [x] 2.4 实现快捷键命令监听
+    - 监听 chrome.commands API 事件
+    - 根据快捷键触发对应截图功能
+    - _Requirements: 5.1, 5.2, 5.3_
+
+- [x] 3. Content Script 实现
+  - [x] 3.1 实现页面滚动信息获取和控制
+    - 获取页面总高度、视口高度等信息
+    - 实现平滑滚动到指定位置
+    - _Requirements: 1.2_
+  - [x] 3.2 实现选区截图交互
+    - 创建选区覆盖层 UI
+    - 实现鼠标拖拽选择区域
+    - 实时显示选区尺寸
+    - 处理 Escape 键取消操作
+    - _Requirements: 3.1, 3.2, 3.3, 3.4_
+  - [x] 3.3 实现进度指示器
+    - 创建进度条 UI 组件
+    - 显示截图进度百分比
+    - _Requirements: 1.3_
+
+- [x] 4. Popup UI 实现
+  - [x] 4.1 创建 Popup 基础界面
+    - 创建 popup.html 结构
+    - 实现 popup.css 样式
+    - 添加三种截图模式按钮
+    - _Requirements: 6.1, 6.4_
+  - [x] 4.2 实现截图预览面板
+    - 显示截图预览图
+    - 添加保存格式选择（PNG/JPEG）
+    - 添加保存和复制按钮
+    - _Requirements: 1.4, 2.2, 4.1_
+  - [x] 4.3 实现 Popup 与 Background 通信
+    - 发送截图请求消息
+    - 接收截图结果和进度更新
+    - _Requirements: 1.1, 2.1, 3.1_
+
+- [x] 5. 国际化支持
+  - [x] 5.1 实现中英文语言包
+    - 创建 _locales/zh_CN/messages.json
+    - 创建 _locales/en/messages.json
+    - 在 UI 中应用 i18n
+    - _Requirements: 6.2_
+
+- [x] 6. 用户设置与引导
+  - [x] 6.1 实现用户设置存储
+    - 使用 chrome.storage API 存储用户偏好
+    - 实现默认格式、语言等设置
+    - _Requirements: 5.4, 6.2_
+  - [x] 6.2 实现首次安装引导
+    - 检测首次安装状态
+    - 显示功能引导提示
+    - _Requirements: 6.3_
+
+- [ ]* 7. 测试验证
+  - [ ]* 7.1 编写核心功能单元测试
+    - 测试图片拼接算法
+    - 测试文件名生成逻辑
+    - _Requirements: 1.2, 4.4_

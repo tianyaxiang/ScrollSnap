@@ -1,0 +1,150 @@
+{
+  "extName": {
+    "message": "滚动截屏",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "轻松截取网页滚动内容的 Chrome 扩展",
+    "description": "Extension description"
+  },
+  "cmdFullPage": {
+    "message": "全页截图",
+    "description": "Full page capture command"
+  },
+  "cmdVisible": {
+    "message": "可视区域截图",
+    "description": "Visible area capture command"
+  },
+  "cmdSelection": {
+    "message": "选区截图",
+    "description": "Selection capture command"
+  },
+  "previewTitle": {
+    "message": "截图预览",
+    "description": "Preview panel title"
+  },
+  "formatLabel": {
+    "message": "格式:",
+    "description": "Format selector label"
+  },
+  "btnSave": {
+    "message": "保存",
+    "description": "Save button text"
+  },
+  "btnCopy": {
+    "message": "复制",
+    "description": "Copy button text"
+  },
+  "btnBack": {
+    "message": "返回",
+    "description": "Back button tooltip"
+  },
+  "saveSuccess": {
+    "message": "已保存",
+    "description": "Save success message"
+  },
+  "copySuccess": {
+    "message": "已复制到剪贴板",
+    "description": "Copy success message"
+  },
+  "errorRestricted": {
+    "message": "此页面不支持截图",
+    "description": "Restricted page error"
+  },
+  "errorNoTab": {
+    "message": "无法获取当前标签页",
+    "description": "No active tab error"
+  },
+  "errorScrollInfo": {
+    "message": "无法获取页面信息",
+    "description": "Scroll info error"
+  },
+  "errorUnknown": {
+    "message": "未知操作",
+    "description": "Unknown action error"
+  },
+  "errorGeneric": {
+    "message": "截图失败，请重试",
+    "description": "Generic error message"
+  },
+  "tooltipFullPage": {
+    "message": "截取整个页面 (Alt+Shift+S)",
+    "description": "Full page button tooltip"
+  },
+  "tooltipVisible": {
+    "message": "截取可视区域 (Alt+Shift+V)",
+    "description": "Visible area button tooltip"
+  },
+  "tooltipSelection": {
+    "message": "选择区域截图 (Alt+Shift+A)",
+    "description": "Selection button tooltip"
+  },
+  "tooltipSave": {
+    "message": "保存到本地",
+    "description": "Save button tooltip"
+  },
+  "tooltipCopy": {
+    "message": "复制到剪贴板",
+    "description": "Copy button tooltip"
+  },
+  "capturing": {
+    "message": "截图中...",
+    "description": "Capturing status text"
+  },
+  "processing": {
+    "message": "处理中...",
+    "description": "Processing status text"
+  },
+  "settingsTitle": {
+    "message": "设置",
+    "description": "Settings panel title"
+  },
+  "settingDefaultFormat": {
+    "message": "默认保存格式",
+    "description": "Default format setting label"
+  },
+  "settingJpegQuality": {
+    "message": "JPEG 质量",
+    "description": "JPEG quality setting label"
+  },
+  "tooltipSettings": {
+    "message": "设置",
+    "description": "Settings button tooltip"
+  },
+  "guideTitle": {
+    "message": "欢迎使用滚动截屏",
+    "description": "Guide title"
+  },
+  "guideFeature1Title": {
+    "message": "全页截图",
+    "description": "Guide feature 1 title"
+  },
+  "guideFeature1Desc": {
+    "message": "自动滚动捕获整个页面",
+    "description": "Guide feature 1 description"
+  },
+  "guideFeature2Title": {
+    "message": "可视区域",
+    "description": "Guide feature 2 title"
+  },
+  "guideFeature2Desc": {
+    "message": "快速截取当前屏幕",
+    "description": "Guide feature 2 description"
+  },
+  "guideFeature3Title": {
+    "message": "选区截图",
+    "description": "Guide feature 3 title"
+  },
+  "guideFeature3Desc": {
+    "message": "自由选择截图区域",
+    "description": "Guide feature 3 description"
+  },
+  "guideShortcuts": {
+    "message": "快捷键提示:",
+    "description": "Guide shortcuts title"
+  },
+  "guideStart": {
+    "message": "开始使用",
+    "description": "Guide start button"
+  }
+}

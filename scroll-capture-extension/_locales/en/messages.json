@@ -1,0 +1,150 @@
+{
+  "extName": {
+    "message": "Scroll Capture",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "Easy scroll screenshot capture for Chrome",
+    "description": "Extension description"
+  },
+  "cmdFullPage": {
+    "message": "Full Page Screenshot",
+    "description": "Full page capture command"
+  },
+  "cmdVisible": {
+    "message": "Visible Area Screenshot",
+    "description": "Visible area capture command"
+  },
+  "cmdSelection": {
+    "message": "Selection Screenshot",
+    "description": "Selection capture command"
+  },
+  "previewTitle": {
+    "message": "Screenshot Preview",
+    "description": "Preview panel title"
+  },
+  "formatLabel": {
+    "message": "Format:",
+    "description": "Format selector label"
+  },
+  "btnSave": {
+    "message": "Save",
+    "description": "Save button text"
+  },
+  "btnCopy": {
+    "message": "Copy",
+    "description": "Copy button text"
+  },
+  "btnBack": {
+    "message": "Back",
+    "description": "Back button tooltip"
+  },
+  "saveSuccess": {
+    "message": "Saved successfully",
+    "description": "Save success message"
+  },
+  "copySuccess": {
+    "message": "Copied to clipboard",
+    "description": "Copy success message"
+  },
+  "errorRestricted": {
+    "message": "This page cannot be captured",
+    "description": "Restricted page error"
+  },
+  "errorNoTab": {
+    "message": "Cannot access current tab",
+    "description": "No active tab error"
+  },
+  "errorScrollInfo": {
+    "message": "Cannot get page information",
+    "description": "Scroll info error"
+  },
+  "errorUnknown": {
+    "message": "Unknown operation",
+    "description": "Unknown action error"
+  },
+  "errorGeneric": {
+    "message": "Capture failed, please try again",
+    "description": "Generic error message"
+  },
+  "tooltipFullPage": {
+    "message": "Capture entire page (Alt+Shift+S)",
+    "description": "Full page button tooltip"
+  },
+  "tooltipVisible": {
+    "message": "Capture visible area (Alt+Shift+V)",
+    "description": "Visible area button tooltip"
+  },
+  "tooltipSelection": {
+    "message": "Select area to capture (Alt+Shift+A)",
+    "description": "Selection button tooltip"
+  },
+  "tooltipSave": {
+    "message": "Save to local",
+    "description": "Save button tooltip"
+  },
+  "tooltipCopy": {
+    "message": "Copy to clipboard",
+    "description": "Copy button tooltip"
+  },
+  "capturing": {
+    "message": "Capturing...",
+    "description": "Capturing status text"
+  },
+  "processing": {
+    "message": "Processing...",
+    "description": "Processing status text"
+  },
+  "settingsTitle": {
+    "message": "Settings",
+    "description": "Settings panel title"
+  },
+  "settingDefaultFormat": {
+    "message": "Default Save Format",
+    "description": "Default format setting label"
+  },
+  "settingJpegQuality": {
+    "message": "JPEG Quality",
+    "description": "JPEG quality setting label"
+  },
+  "tooltipSettings": {
+    "message": "Settings",
+    "description": "Settings button tooltip"
+  },
+  "guideTitle": {
+    "message": "Welcome to Scroll Capture",
+    "description": "Guide title"
+  },
+  "guideFeature1Title": {
+    "message": "Full Page",
+    "description": "Guide feature 1 title"
+  },
+  "guideFeature1Desc": {
+    "message": "Auto-scroll to capture entire page",
+    "description": "Guide feature 1 description"
+  },
+  "guideFeature2Title": {
+    "message": "Visible Area",
+    "description": "Guide feature 2 title"
+  },
+  "guideFeature2Desc": {
+    "message": "Quickly capture current screen",
+    "description": "Guide feature 2 description"
+  },
+  "guideFeature3Title": {
+    "message": "Selection",
+    "description": "Guide feature 3 title"
+  },
+  "guideFeature3Desc": {
+    "message": "Freely select capture area",
+    "description": "Guide feature 3 description"
+  },
+  "guideShortcuts": {
+    "message": "Keyboard Shortcuts:",
+    "description": "Guide shortcuts title"
+  },
+  "guideStart": {
+    "message": "Get Started",
+    "description": "Guide start button"
+  }
+}

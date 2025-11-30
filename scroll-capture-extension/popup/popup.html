@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-i18n="extName">Scroll Capture</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- 主菜单 -->
+    <div id="main-menu" class="panel">
+      <div class="header">
+        <h1 class="title" data-i18n="extName">Scroll Capture</h1>
+        <button id="btn-settings" class="settings-btn" data-i18n-title="tooltipSettings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+          </svg>
+        </button>
+      </div>
+      
+      <div class="capture-buttons">
+        <!-- 全页截图 -->
+        <button id="btn-full-page" class="capture-btn" data-i18n-title="tooltipFullPage">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <line x1="3" y1="9" x2="21" y2="9"/>
+            <line x1="3" y1="15" x2="21" y2="15"/>
+          </svg>
+          <span data-i18n="cmdFullPage">全页截图</span>
+        </button>
+        
+        <!-- 可视区域截图 -->
+        <button id="btn-visible" class="capture-btn" data-i18n-title="tooltipVisible">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor" opacity="0.2"/>
+          </svg>
+          <span data-i18n="cmdVisible">可视区域截图</span>
+        </button>
+        
+        <!-- 选区截图 -->
+        <button id="btn-selection" class="capture-btn" data-i18n-title="tooltipSelection">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 4h4M4 4v4M20 4h-4M20 4v4M4 20h4M4 20v-4M20 20h-4M20 20v-4"/>
+            <rect x="8" y="8" width="8" height="8" stroke-dasharray="2 2"/>
+          </svg>
+          <span data-i18n="cmdSelection">选区截图</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 预览面板 -->
+    <div id="preview-panel" class="panel hidden">
+      <div class="preview-header">
+        <button id="btn-back" class="back-btn" data-i18n-title="btnBack">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+        </button>
+        <span class="preview-title" data-i18n="previewTitle">截图预览</span>
+        <span id="preview-dimensions" class="dimensions"></span>
+      </div>
+      
+      <div class="preview-container">
+        <img id="preview-image" src="" alt="Screenshot preview"/>
+      </div>
+      
+      <div class="preview-actions">
+        <div class="format-selector">
+          <label data-i18n="formatLabel">格式:</label>
+          <select id="format-select">
+            <option value="png">PNG</option>
+            <option value="jpeg">JPEG</option>
+          </select>
+        </div>
+        
+        <div class="action-buttons">
+          <button id="btn-save" class="action-btn primary" data-i18n-title="tooltipSave">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+            </svg>
+            <span data-i18n="btnSave">保存</span>
+          </button>
+          
+          <button id="btn-copy" class="action-btn" data-i18n-title="tooltipCopy">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2"/>
+              <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+            </svg>
+            <span data-i18n="btnCopy">复制</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 设置面板 -->
+    <div id="settings-panel" class="panel hidden">
+      <div class="settings-header">
+        <button id="btn-settings-back" class="back-btn" data-i18n-title="btnBack">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+        </button>
+        <span class="settings-title" data-i18n="settingsTitle">设置</span>
+      </div>
+      
+      <div class="settings-content">
+        <!-- 默认格式设置 -->
+        <div class="setting-item">
+          <label data-i18n="settingDefaultFormat">默认保存格式</label>
+          <select id="setting-format">
+            <option value="png">PNG</option>
+            <option value="jpeg">JPEG</option>
+          </select>
+        </div>
+        
+        <!-- JPEG 质量设置 -->
+        <div class="setting-item" id="quality-setting">
+          <label data-i18n="settingJpegQuality">JPEG 质量</label>
+          <div class="quality-control">
+            <input type="range" id="setting-quality" min="50" max="100" value="92">
+            <span id="quality-value">92%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 进度指示器 -->
+    <div id="progress-overlay" class="overlay hidden">
+      <div class="progress-content">
+        <div class="progress-bar">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <span id="progress-text" class="progress-text">0%</span>
+      </div>
+    </div>
+
+    <!-- 错误提示 -->
+    <div id="error-toast" class="toast hidden">
+      <span id="error-message"></span>
+    </div>
+
+    <!-- 首次安装引导 -->
+    <div id="guide-overlay" class="guide-overlay hidden">
+      <div class="guide-content">
+        <div class="guide-header">
+          <span class="guide-icon">🎉</span>
+          <h2 class="guide-title" data-i18n="guideTitle">欢迎使用滚动截屏</h2>
+        </div>
+        <div class="guide-features">
+          <div class="guide-feature">
+            <span class="feature-icon">📄</span>
+            <div class="feature-text">
+              <strong data-i18n="guideFeature1Title">全页截图</strong>
+              <span data-i18n="guideFeature1Desc">自动滚动捕获整个页面</span>
+            </div>
+          </div>
+          <div class="guide-feature">
+            <span class="feature-icon">🖼️</span>
+            <div class="feature-text">
+              <strong data-i18n="guideFeature2Title">可视区域</strong>
+              <span data-i18n="guideFeature2Desc">快速截取当前屏幕</span>
+            </div>
+          </div>
+          <div class="guide-feature">
+            <span class="feature-icon">✂️</span>
+            <div class="feature-text">
+              <strong data-i18n="guideFeature3Title">选区截图</strong>
+              <span data-i18n="guideFeature3Desc">自由选择截图区域</span>
+            </div>
+          </div>
+        </div>
+        <div class="guide-shortcuts">
+          <p class="shortcuts-title" data-i18n="guideShortcuts">快捷键提示:</p>
+          <div class="shortcut-item">
+            <kbd>Alt+Shift+S</kbd>
+            <span data-i18n="cmdFullPage">全页截图</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>Alt+Shift+V</kbd>
+            <span data-i18n="cmdVisible">可视区域截图</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>Alt+Shift+A</kbd>
+            <span data-i18n="cmdSelection">选区截图</span>
+          </div>
+        </div>
+        <button id="btn-guide-close" class="guide-close-btn" data-i18n="guideStart">开始使用</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../utils/i18n.js"></script>
+  <script src="../utils/settings.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
