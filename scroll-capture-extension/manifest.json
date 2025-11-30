@@ -6,11 +6,15 @@
   "default_locale": "zh_CN",
   "permissions": [
     "activeTab",
+    "tabs",
     "scripting",
     "storage",
     "downloads",
     "clipboardWrite",
     "offscreen"
+  ],
+  "host_permissions": [
+    "<all_urls>"
   ],
   "content_scripts": [
     {

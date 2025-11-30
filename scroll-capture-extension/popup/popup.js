@@ -9,7 +9,12 @@ const state = {
   previewDataUrl: null,
   previewDimensions: null,
   selectedFormat: 'png',
-  jpegQuality: 92
+  jpegQuality: 92,
+  // 批量截图状态
+  batchTabs: [],
+  batchSelectedIds: new Set(),
+  batchResults: new Map(), // tabId -> { dataUrl, dimensions, error }
+  isBatchCapturing: false
 };
 
 // ============================================
@@ -28,6 +33,7 @@ const elements = {
   btnFullPage: document.getElementById('btn-full-page'),
   btnVisible: document.getElementById('btn-visible'),
   btnSelection: document.getElementById('btn-selection'),
+  btnBatch: document.getElementById('btn-batch'),
   btnSettings: document.getElementById('btn-settings'),
   
   // Preview elements
@@ -37,6 +43,14 @@ const elements = {
   formatSelect: document.getElementById('format-select'),
   btnSave: document.getElementById('btn-save'),
   btnCopy: document.getElementById('btn-copy'),
+  
+  // Batch capture elements
+  batchPanel: document.getElementById('batch-panel'),
+  btnBatchBack: document.getElementById('btn-batch-back'),
+  batchSelectAll: document.getElementById('batch-select-all'),
+  batchSelectedCount: document.getElementById('batch-selected-count'),
+  batchTabsList: document.getElementById('batch-tabs-list'),
+  btnBatchCapture: document.getElementById('btn-batch-capture'),
   
   // Settings elements
   btnSettingsBack: document.getElementById('btn-settings-back'),
@@ -92,6 +106,7 @@ function bindEvents() {
   elements.btnFullPage.addEventListener('click', () => startCapture('full'));
   elements.btnVisible.addEventListener('click', () => startCapture('visible'));
   elements.btnSelection.addEventListener('click', () => startCapture('selection'));
+  elements.btnBatch.addEventListener('click', showBatchPanel);
   elements.btnSettings.addEventListener('click', showSettingsPanel);
   
   // Preview actions
@@ -99,6 +114,11 @@ function bindEvents() {
   elements.btnSave.addEventListener('click', saveScreenshot);
   elements.btnCopy.addEventListener('click', copyScreenshot);
   elements.formatSelect.addEventListener('change', onFormatChange);
+  
+  // Batch capture actions
+  elements.btnBatchBack.addEventListener('click', showMainMenu);
+  elements.batchSelectAll.addEventListener('change', onBatchSelectAllChange);
+  elements.btnBatchCapture.addEventListener('click', startBatchCapture);
   
   // Settings actions
   elements.btnSettingsBack.addEventListener('click', showMainMenu);
@@ -382,6 +402,7 @@ function showMainMenu() {
   elements.previewImage.src = '';
   elements.previewPanel.classList.add('hidden');
   elements.settingsPanel.classList.add('hidden');
+  elements.batchPanel.classList.add('hidden');
   elements.mainMenu.classList.remove('hidden');
 }
 
@@ -586,6 +607,220 @@ function getErrorMessage(errorCode) {
   };
   
   return errorMessages[errorCode] || errorCode || getMessage('errorGeneric', '截图失败，请重试');
+}
+
+// ============================================
+// Batch Capture Functions
+// ============================================
+
+const MAX_BATCH_TABS = 50;
+
+/**
+ * Show batch capture panel and load tabs
+ */
+async function showBatchPanel() {
+  elements.mainMenu.classList.add('hidden');
+  elements.batchPanel.classList.remove('hidden');
+  
+  // 重置状态
+  state.batchSelectedIds.clear();
+  state.batchResults.clear();
+  elements.batchSelectAll.checked = false;
+  
+  await loadBatchTabs();
+  updateBatchSelectedCount();
+}
+
+/**
+ * Load all tabs for batch capture
+ */
+async function loadBatchTabs() {
+  try {
+    const allTabs = await chrome.tabs.query({ currentWindow: true });
+    // 过滤掉受限页面，只保留可截图的标签页
+    const availableTabs = allTabs.filter(tab => !isRestrictedUrl(tab.url));
+    state.batchTabs = availableTabs.slice(0, MAX_BATCH_TABS);
+    
+    if (state.batchTabs.length === 0) {
+      showError(getMessage('batchNoTabs', '没有可截图的标签页'));
+    }
+    
+    renderBatchTabsList();
+  } catch (error) {
+    console.error('Failed to load tabs:', error);
+    showError(getMessage('batchNoTabs', '没有可截图的标签页'));
+  }
+}
+
+/**
+ * Render batch tabs list
+ */
+function renderBatchTabsList() {
+  elements.batchTabsList.innerHTML = '';
+  
+  for (const tab of state.batchTabs) {
+    const result = state.batchResults.get(tab.id);
+    
+    const item = document.createElement('div');
+    item.className = 'batch-tab-item';
+    if (result?.dataUrl) item.classList.add('captured');
+    if (result?.error) item.classList.add('failed');
+    if (state.batchSelectedIds.has(tab.id)) item.classList.add('selected');
+    
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = state.batchSelectedIds.has(tab.id);
+    checkbox.addEventListener('change', () => onBatchTabToggle(tab.id, checkbox.checked));
+    
+    const favicon = document.createElement('img');
+    favicon.className = 'batch-tab-favicon';
+    favicon.src = tab.favIconUrl || 'icons/icon16.png';
+    favicon.onerror = () => { favicon.src = 'icons/icon16.png'; };
+    
+    const info = document.createElement('div');
+    info.className = 'batch-tab-info';
+    
+    const title = document.createElement('div');
+    title.className = 'batch-tab-title';
+    title.textContent = tab.title || tab.url;
+    title.title = tab.title || tab.url;
+    
+    const url = document.createElement('div');
+    url.className = 'batch-tab-url';
+    url.textContent = tab.url;
+    url.title = tab.url;
+    
+    info.appendChild(title);
+    info.appendChild(url);
+    
+    item.appendChild(checkbox);
+    item.appendChild(favicon);
+    item.appendChild(info);
+    
+    // 添加状态标签
+    if (result?.dataUrl) {
+      const status = document.createElement('span');
+      status.className = 'batch-tab-status success';
+      status.textContent = getMessage('batchCaptureSuccess', '成功');
+      item.appendChild(status);
+    } else if (result?.error) {
+      const status = document.createElement('span');
+      status.className = 'batch-tab-status failed';
+      status.textContent = getMessage('batchCaptureFailed', '失败');
+      status.title = result.error;
+      item.appendChild(status);
+    }
+    
+    // 点击行也可以切换选择
+    item.addEventListener('click', (e) => {
+      if (e.target === checkbox) return;
+      checkbox.checked = !checkbox.checked;
+      onBatchTabToggle(tab.id, checkbox.checked);
+    });
+    
+    elements.batchTabsList.appendChild(item);
+  }
+}
+
+/**
+ * Check if URL is restricted
+ */
+function isRestrictedUrl(url) {
+  if (!url) return true;
+  const restrictedPrefixes = ['chrome://', 'chrome-extension://', 'edge://', 'about:', 'file://'];
+  return restrictedPrefixes.some(prefix => url.startsWith(prefix));
+}
+
+/**
+ * Handle batch tab toggle
+ */
+function onBatchTabToggle(tabId, checked) {
+  if (checked) {
+    state.batchSelectedIds.add(tabId);
+  } else {
+    state.batchSelectedIds.delete(tabId);
+  }
+  updateBatchSelectedCount();
+  updateBatchSelectAllState();
+  renderBatchTabsList();
+}
+
+/**
+ * Handle select all change
+ */
+function onBatchSelectAllChange() {
+  const checked = elements.batchSelectAll.checked;
+  state.batchSelectedIds.clear();
+  
+  if (checked) {
+    for (const tab of state.batchTabs) {
+      state.batchSelectedIds.add(tab.id);
+    }
+  }
+  
+  updateBatchSelectedCount();
+  renderBatchTabsList();
+}
+
+/**
+ * Update select all checkbox state
+ */
+function updateBatchSelectAllState() {
+  const allSelected = state.batchTabs.length > 0 && 
+    state.batchTabs.every(t => state.batchSelectedIds.has(t.id));
+  elements.batchSelectAll.checked = allSelected;
+}
+
+/**
+ * Update selected count display
+ */
+function updateBatchSelectedCount() {
+  const count = state.batchSelectedIds.size;
+  const text = getMessage('batchSelectedCount', `已选择 ${count} 个标签`).replace('$COUNT$', count);
+  elements.batchSelectedCount.textContent = text;
+  elements.btnBatchCapture.disabled = count === 0 || state.isBatchCapturing;
+}
+
+/**
+ * Start batch capture
+ * 批量截图会在后台执行，截图完成后自动下载
+ */
+async function startBatchCapture() {
+  if (state.isBatchCapturing || state.batchSelectedIds.size === 0) return;
+  
+  const selectedTabIds = Array.from(state.batchSelectedIds);
+  const selectedTabs = state.batchTabs.filter(t => state.batchSelectedIds.has(t.id));
+  
+  // 获取当前活动标签页ID，用于显示结果
+  const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const originalTabId = currentTab?.id;
+  
+  // 将标签信息存储起来
+  const tabInfoMap = {};
+  for (const tab of selectedTabs) {
+    tabInfoMap[tab.id] = { title: tab.title, url: tab.url };
+  }
+  
+  // 存储批量截图任务信息到 storage，让 background 可以访问
+  await chrome.storage.local.set({
+    batchCaptureTask: {
+      tabIds: selectedTabIds,
+      tabInfoMap: tabInfoMap,
+      format: state.selectedFormat,
+      quality: state.jpegQuality,
+      originalTabId: originalTabId,
+      timestamp: Date.now()
+    }
+  });
+  
+  // 发送开始批量截图的消息，然后关闭 popup
+  // 因为切换标签页会导致 popup 关闭，所以我们主动关闭并让 background 处理
+  chrome.runtime.sendMessage({
+    action: 'startBatchCapture'
+  });
+  
+  // 关闭 popup，让截图在后台进行
+  window.close();
 }
 
 // ============================================

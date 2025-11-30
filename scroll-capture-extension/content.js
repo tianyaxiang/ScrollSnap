@@ -811,6 +811,21 @@
         sendResponse({ success: true });
         break;
 
+      case 'showBatchProgress':
+        showBatchProgressPanel(message.current, message.total, message.status);
+        sendResponse({ success: true });
+        break;
+
+      case 'showBatchResults':
+        showBatchResultsPanel(message.results, message.format);
+        sendResponse({ success: true });
+        break;
+
+      case 'hideBatchProgress':
+        hideBatchProgressPanel();
+        sendResponse({ success: true });
+        break;
+
       default:
         sendResponse({ error: 'Unknown action' });
     }
@@ -977,6 +992,328 @@
     toast.textContent = message;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 2000);
+  }
+
+  // ============================================
+  // 3.5 批量截图进度和结果预览
+  // ============================================
+
+  let batchProgressPanel = null;
+  let batchResultsPanel = null;
+  let batchResultsData = [];
+  let batchFormat = 'png';
+
+  /**
+   * 显示批量截图进度面板
+   */
+  function showBatchProgressPanel(current, total, status) {
+    if (!batchProgressPanel) {
+      batchProgressPanel = document.createElement('div');
+      batchProgressPanel.id = 'scroll-capture-batch-progress';
+      batchProgressPanel.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        z-index: 2147483647;
+        padding: 16px 20px;
+        min-width: 280px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      `;
+      document.body.appendChild(batchProgressPanel);
+    }
+
+    const percent = Math.round((current / total) * 100);
+    const statusText = status === 'capturing' ? '正在截图...' : '处理中...';
+    
+    batchProgressPanel.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+        <div style="width: 24px; height: 24px; border: 3px solid #e0e0e0; border-top-color: #1a73e8; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+        <span style="font-size: 14px; font-weight: 500; color: #333;">${statusText}</span>
+      </div>
+      <div style="background: #e0e0e0; border-radius: 4px; height: 8px; overflow: hidden; margin-bottom: 8px;">
+        <div style="background: #1a73e8; height: 100%; width: ${percent}%; transition: width 0.3s;"></div>
+      </div>
+      <div style="font-size: 13px; color: #666; text-align: center;">${current} / ${total}</div>
+      <style>
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      </style>
+    `;
+  }
+
+  /**
+   * 隐藏批量截图进度面板
+   */
+  function hideBatchProgressPanel() {
+    if (batchProgressPanel) {
+      batchProgressPanel.remove();
+      batchProgressPanel = null;
+    }
+  }
+
+  /**
+   * 显示批量截图结果面板
+   */
+  function showBatchResultsPanel(results, format) {
+    hideBatchProgressPanel();
+    removeBatchResultsPanel();
+    
+    batchResultsData = results;
+    batchFormat = format || 'png';
+    
+    const successCount = results.filter(r => r.success).length;
+    const failCount = results.length - successCount;
+
+    // 创建背景遮罩
+    const backdrop = document.createElement('div');
+    backdrop.id = 'scroll-capture-batch-backdrop';
+    backdrop.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 2147483646;
+    `;
+    backdrop.addEventListener('click', removeBatchResultsPanel);
+    document.body.appendChild(backdrop);
+
+    // 创建结果面板
+    batchResultsPanel = document.createElement('div');
+    batchResultsPanel.id = 'scroll-capture-batch-results';
+    batchResultsPanel.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      z-index: 2147483647;
+      width: 600px;
+      max-width: 90vw;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+
+    // 生成缩略图列表
+    let thumbnailsHtml = '';
+    results.forEach((result, index) => {
+      if (result.success && result.dataUrl) {
+        thumbnailsHtml += `
+          <div class="batch-thumb" data-index="${index}" style="
+            width: 120px;
+            height: 90px;
+            border-radius: 6px;
+            overflow: hidden;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: border-color 0.2s;
+            flex-shrink: 0;
+          ">
+            <img src="${result.dataUrl}" style="width: 100%; height: 100%; object-fit: cover;" />
+          </div>
+        `;
+      } else {
+        thumbnailsHtml += `
+          <div style="
+            width: 120px;
+            height: 90px;
+            border-radius: 6px;
+            background: #f5f5f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #999;
+            font-size: 12px;
+            flex-shrink: 0;
+          ">失败</div>
+        `;
+      }
+    });
+
+    batchResultsPanel.innerHTML = `
+      <div style="padding: 16px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <span style="font-size: 16px; font-weight: 600; color: #333;">批量截图完成</span>
+          <span style="font-size: 13px; color: #666; margin-left: 12px;">成功 ${successCount} 个${failCount > 0 ? `，失败 ${failCount} 个` : ''}</span>
+        </div>
+        <button id="batch-close-btn" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #999; padding: 0 4px; line-height: 1;">×</button>
+      </div>
+      <div style="padding: 16px 20px; overflow-x: auto; border-bottom: 1px solid #eee;">
+        <div style="display: flex; gap: 12px; min-width: max-content;">
+          ${thumbnailsHtml}
+        </div>
+      </div>
+      <div style="padding: 16px 20px; display: flex; gap: 12px; justify-content: flex-end;">
+        <button id="batch-download-all-btn" style="
+          padding: 10px 20px;
+          background: #1a73e8;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 500;
+        ">批量下载 (${successCount})</button>
+      </div>
+    `;
+
+    document.body.appendChild(batchResultsPanel);
+
+    // 绑定事件
+    document.getElementById('batch-close-btn').addEventListener('click', removeBatchResultsPanel);
+    document.getElementById('batch-download-all-btn').addEventListener('click', downloadAllBatchResults);
+    
+    // 缩略图点击预览
+    batchResultsPanel.querySelectorAll('.batch-thumb').forEach(thumb => {
+      thumb.addEventListener('click', () => {
+        const index = parseInt(thumb.dataset.index, 10);
+        const result = batchResultsData[index];
+        if (result && result.success && result.dataUrl) {
+          showSinglePreview(result.dataUrl, result.dimensions, result.title);
+        }
+      });
+      thumb.addEventListener('mouseenter', () => {
+        thumb.style.borderColor = '#1a73e8';
+      });
+      thumb.addEventListener('mouseleave', () => {
+        thumb.style.borderColor = 'transparent';
+      });
+    });
+
+    document.addEventListener('keydown', onBatchResultsKeyDown);
+  }
+
+  /**
+   * 移除批量结果面板
+   */
+  function removeBatchResultsPanel() {
+    const backdrop = document.getElementById('scroll-capture-batch-backdrop');
+    if (backdrop) backdrop.remove();
+    if (batchResultsPanel) {
+      batchResultsPanel.remove();
+      batchResultsPanel = null;
+    }
+    batchResultsData = [];
+    document.removeEventListener('keydown', onBatchResultsKeyDown);
+  }
+
+  /**
+   * 批量结果面板键盘事件
+   */
+  function onBatchResultsKeyDown(e) {
+    if (e.key === 'Escape') {
+      removeBatchResultsPanel();
+    }
+  }
+
+  /**
+   * 显示单张预览（从批量结果中）
+   */
+  function showSinglePreview(dataUrl, dimensions, title) {
+    // 临时隐藏批量结果面板
+    if (batchResultsPanel) {
+      batchResultsPanel.style.display = 'none';
+    }
+    
+    const singlePreview = document.createElement('div');
+    singlePreview.id = 'scroll-capture-single-preview';
+    singlePreview.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      z-index: 2147483648;
+      max-width: 90vw;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+
+    const dimText = dimensions ? `${dimensions.width} × ${dimensions.height}` : '';
+    const titleText = title ? title.substring(0, 50) : '';
+    
+    singlePreview.innerHTML = `
+      <div style="padding: 12px 16px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <span style="font-size: 14px; color: #333; font-weight: 500;">${titleText}</span>
+          <span style="font-size: 12px; color: #999; margin-left: 8px;">${dimText}</span>
+        </div>
+        <button id="single-preview-close" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #999; padding: 0 4px;">×</button>
+      </div>
+      <div style="padding: 16px; overflow: auto; max-height: calc(90vh - 60px);">
+        <img src="${dataUrl}" style="max-width: 100%; display: block; border-radius: 4px;" />
+      </div>
+    `;
+
+    document.body.appendChild(singlePreview);
+
+    const closeBtn = document.getElementById('single-preview-close');
+    const closeSinglePreview = () => {
+      singlePreview.remove();
+      if (batchResultsPanel) {
+        batchResultsPanel.style.display = 'flex';
+      }
+    };
+    closeBtn.addEventListener('click', closeSinglePreview);
+  }
+
+  /**
+   * 批量下载所有成功的截图
+   */
+  async function downloadAllBatchResults() {
+    const btn = document.getElementById('batch-download-all-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '下载中...';
+    }
+
+    let downloadCount = 0;
+    for (const result of batchResultsData) {
+      if (result.success && result.dataUrl) {
+        const safeTitle = (result.title || 'screenshot')
+          .replace(/[<>:"/\\|?*]/g, '_')
+          .substring(0, 50);
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+        const filename = `${safeTitle}_${timestamp}.${batchFormat}`;
+        
+        try {
+          await chrome.runtime.sendMessage({
+            action: 'download',
+            dataUrl: result.dataUrl,
+            filename: filename,
+            format: batchFormat
+          });
+          downloadCount++;
+          // 添加小延迟避免下载过快
+          await new Promise(r => setTimeout(r, 200));
+        } catch (err) {
+          console.error('Download failed:', err);
+        }
+      }
+    }
+
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = `下载完成 (${downloadCount})`;
+      setTimeout(() => {
+        btn.textContent = `批量下载 (${batchResultsData.filter(r => r.success).length})`;
+      }, 2000);
+    }
+
+    showToast(`已下载 ${downloadCount} 张截图`);
   }
 
 })();

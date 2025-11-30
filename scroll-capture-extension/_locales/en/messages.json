@@ -178,5 +178,99 @@
   "shortcutNotSet": {
     "message": "Not set",
     "description": "Shortcut not set text"
+  },
+  "cmdBatchCapture": {
+    "message": "Batch Tab Capture",
+    "description": "Batch tab capture command"
+  },
+  "tooltipBatchCapture": {
+    "message": "Capture multiple tabs at once",
+    "description": "Batch capture button tooltip"
+  },
+  "batchTitle": {
+    "message": "Batch Tab Capture",
+    "description": "Batch capture panel title"
+  },
+  "batchSelectAll": {
+    "message": "Select All",
+    "description": "Select all checkbox label"
+  },
+  "batchSelectedCount": {
+    "message": "$COUNT$ tabs selected",
+    "description": "Selected tabs count",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "5"
+      }
+    }
+  },
+  "batchMaxTabs": {
+    "message": "Max 50 tabs",
+    "description": "Max tabs hint"
+  },
+  "batchStartCapture": {
+    "message": "Start Capture",
+    "description": "Start batch capture button"
+  },
+  "batchDownloadAll": {
+    "message": "Download All",
+    "description": "Download all button"
+  },
+  "batchCapturing": {
+    "message": "Capturing ($CURRENT$/$TOTAL$)",
+    "description": "Batch capturing progress",
+    "placeholders": {
+      "current": {
+        "content": "$1",
+        "example": "3"
+      },
+      "total": {
+        "content": "$2",
+        "example": "10"
+      }
+    }
+  },
+  "batchComplete": {
+    "message": "Capture Complete",
+    "description": "Batch capture complete"
+  },
+  "batchDownloading": {
+    "message": "Downloading ($CURRENT$/$TOTAL$)",
+    "description": "Batch downloading progress",
+    "placeholders": {
+      "current": {
+        "content": "$1",
+        "example": "3"
+      },
+      "total": {
+        "content": "$2",
+        "example": "10"
+      }
+    }
+  },
+  "batchDownloadComplete": {
+    "message": "Download Complete",
+    "description": "Batch download complete"
+  },
+  "batchNoTabs": {
+    "message": "No tabs available for capture",
+    "description": "No tabs available message"
+  },
+  "batchTabRestricted": {
+    "message": "Restricted",
+    "description": "Restricted tab label"
+  },
+  "batchCaptureSuccess": {
+    "message": "Success",
+    "description": "Capture success status"
+  },
+  "batchCaptureFailed": {
+    "message": "Failed",
+    "description": "Capture failed status"
+  },
+  "batchNote": {
+    "message": "Click to start capturing selected tabs one by one",
+    "description": "Batch capture note"
   }
 }

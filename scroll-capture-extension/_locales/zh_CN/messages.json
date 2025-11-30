@@ -178,5 +178,99 @@
   "shortcutNotSet": {
     "message": "未设置",
     "description": "Shortcut not set text"
+  },
+  "cmdBatchCapture": {
+    "message": "批量标签截图",
+    "description": "Batch tab capture command"
+  },
+  "tooltipBatchCapture": {
+    "message": "批量截取多个标签页",
+    "description": "Batch capture button tooltip"
+  },
+  "batchTitle": {
+    "message": "批量标签截图",
+    "description": "Batch capture panel title"
+  },
+  "batchSelectAll": {
+    "message": "全选",
+    "description": "Select all checkbox label"
+  },
+  "batchSelectedCount": {
+    "message": "已选择 $COUNT$ 个标签",
+    "description": "Selected tabs count",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "5"
+      }
+    }
+  },
+  "batchMaxTabs": {
+    "message": "最多选择 50 个标签",
+    "description": "Max tabs hint"
+  },
+  "batchStartCapture": {
+    "message": "开始截图",
+    "description": "Start batch capture button"
+  },
+  "batchDownloadAll": {
+    "message": "批量下载",
+    "description": "Download all button"
+  },
+  "batchCapturing": {
+    "message": "正在截图 ($CURRENT$/$TOTAL$)",
+    "description": "Batch capturing progress",
+    "placeholders": {
+      "current": {
+        "content": "$1",
+        "example": "3"
+      },
+      "total": {
+        "content": "$2",
+        "example": "10"
+      }
+    }
+  },
+  "batchComplete": {
+    "message": "截图完成",
+    "description": "Batch capture complete"
+  },
+  "batchDownloading": {
+    "message": "正在下载 ($CURRENT$/$TOTAL$)",
+    "description": "Batch downloading progress",
+    "placeholders": {
+      "current": {
+        "content": "$1",
+        "example": "3"
+      },
+      "total": {
+        "content": "$2",
+        "example": "10"
+      }
+    }
+  },
+  "batchDownloadComplete": {
+    "message": "下载完成",
+    "description": "Batch download complete"
+  },
+  "batchNoTabs": {
+    "message": "没有可截图的标签页",
+    "description": "No tabs available message"
+  },
+  "batchTabRestricted": {
+    "message": "受限页面",
+    "description": "Restricted tab label"
+  },
+  "batchCaptureSuccess": {
+    "message": "成功",
+    "description": "Capture success status"
+  },
+  "batchCaptureFailed": {
+    "message": "失败",
+    "description": "Capture failed status"
+  },
+  "batchNote": {
+    "message": "点击开始后将依次截取选中的标签页",
+    "description": "Batch capture note"
   }
 }

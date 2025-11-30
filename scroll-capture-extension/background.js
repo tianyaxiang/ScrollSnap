@@ -273,7 +273,14 @@ async function sendMessageToTab(tabId, message) {
     await chrome.tabs.sendMessage(tabId, message);
   } catch (error) {
     // Content script可能未加载，对于重要消息尝试注入后重试
-    if (message.action === 'showPreview' || message.action === 'startSelection') {
+    const importantActions = [
+      'showPreview', 
+      'startSelection', 
+      'showBatchProgress', 
+      'showBatchResults',
+      'hideBatchProgress'
+    ];
+    if (importantActions.includes(message.action)) {
       try {
         await chrome.scripting.executeScript({
           target: { tabId },
@@ -659,6 +666,24 @@ async function handleMessage(message, sender) {
         await delay(100);
         await chrome.tabs.sendMessage(tab.id, { action: 'startSelection' });
       }
+      return { success: true };
+    }
+
+    case 'batchCaptureTab': {
+      // 批量截图单个标签页
+      const { tabId, format, quality } = params;
+      return await captureBatchTab(tabId, format, quality);
+    }
+
+    case 'batchCaptureAllTabs': {
+      // 批量截图所有选中的标签页
+      const { tabIds, format, quality } = params;
+      return await batchCaptureAllTabs(tabIds, format, quality);
+    }
+
+    case 'startBatchCapture': {
+      // 从 storage 读取任务信息并开始批量截图
+      startBatchCaptureFromStorage();
       return { success: true };
     }
 
@@ -1464,6 +1489,289 @@ async function cropImage(dataUrl, rect, format, quality, dpr = 1) {
     reader.onloadend = () => resolve(reader.result);
     reader.readAsDataURL(resultBlob);
   });
+}
+
+// ============================================
+// 批量标签页截图功能
+// ============================================
+
+/**
+ * 从 storage 读取任务信息并开始批量截图
+ */
+async function startBatchCaptureFromStorage() {
+  console.log('[BatchCapture] Starting batch capture from storage...');
+  try {
+    const data = await chrome.storage.local.get(['batchCaptureTask']);
+    const task = data.batchCaptureTask;
+    
+    console.log('[BatchCapture] Task data:', task);
+    
+    if (!task || !task.tabIds || task.tabIds.length === 0) {
+      console.error('[BatchCapture] No batch capture task found');
+      return;
+    }
+    
+    const { tabIds, tabInfoMap, format, quality, originalTabId } = task;
+    
+    // 清除任务
+    await chrome.storage.local.remove(['batchCaptureTask']);
+    
+    console.log('[BatchCapture] Original tab ID:', originalTabId);
+    
+    // 执行批量截图，传入进度回调
+    const result = await batchCaptureAllTabs(tabIds, format, quality, tabInfoMap, originalTabId);
+    
+    // 准备结果数据用于预览
+    const resultsForPreview = [];
+    for (const tabId of tabIds) {
+      const tabResult = result.results[tabId];
+      const tabInfo = tabInfoMap[tabId] || {};
+      resultsForPreview.push({
+        tabId,
+        title: tabInfo.title || '',
+        url: tabInfo.url || '',
+        success: tabResult?.success || false,
+        dataUrl: tabResult?.dataUrl || null,
+        dimensions: tabResult?.dimensions || null,
+        error: tabResult?.error || null
+      });
+    }
+    
+    // 在原始标签页显示结果预览
+    console.log(`[BatchCapture] Showing results on tab ${originalTabId}`);
+    if (originalTabId) {
+      try {
+        await chrome.tabs.update(originalTabId, { active: true });
+        await delay(300);
+        console.log(`[BatchCapture] Sending showBatchResults message`);
+        await sendMessageToTab(originalTabId, {
+          action: 'showBatchResults',
+          results: resultsForPreview,
+          format: format
+        });
+        console.log(`[BatchCapture] Results panel should be visible now`);
+      } catch (e) {
+        console.error('[BatchCapture] Failed to show batch results:', e);
+      }
+    }
+    
+    console.log(`[BatchCapture] Batch capture complete: ${resultsForPreview.filter(r => r.success).length} succeeded`);
+  } catch (error) {
+    console.error('Batch capture from storage failed:', error);
+  }
+}
+
+/**
+ * 批量截图所有选中的标签页
+ * @param {number[]} tabIds - 标签页ID数组
+ * @param {string} format - 图片格式
+ * @param {number} quality - JPEG质量
+ * @param {object} tabInfoMap - 标签页信息映射
+ * @param {number} progressTabId - 显示进度的标签页ID
+ * @returns {Promise<object>}
+ */
+async function batchCaptureAllTabs(tabIds, format = 'png', quality = 92, tabInfoMap = {}, progressTabId = null) {
+  const results = {};
+  const total = tabIds.length;
+  
+  for (let i = 0; i < tabIds.length; i++) {
+    const tabId = tabIds[i];
+    
+    try {
+      // captureBatchTab 会切换到目标标签页
+      // 在截图前，在目标标签页显示进度
+      const result = await captureBatchTabWithProgress(tabId, format, quality, i + 1, total);
+      results[tabId] = result;
+    } catch (error) {
+      results[tabId] = { success: false, error: error.message };
+    }
+  }
+  
+  return { success: true, results };
+}
+
+/**
+ * 带进度显示的单个标签页截图
+ */
+async function captureBatchTabWithProgress(tabId, format, quality, current, total) {
+  console.log(`[BatchCapture] Capturing tab ${tabId} (${current}/${total})`);
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    console.log(`[BatchCapture] Tab URL: ${tab.url}`);
+    
+    if (isRestrictedPage(tab.url)) {
+      console.log(`[BatchCapture] Tab ${tabId} is restricted`);
+      return { success: false, error: 'RESTRICTED_PAGE' };
+    }
+
+    // 激活标签页
+    console.log(`[BatchCapture] Activating tab ${tabId}`);
+    await chrome.tabs.update(tabId, { active: true });
+    await delay(300);
+    
+    // 在当前标签页显示进度
+    console.log(`[BatchCapture] Showing progress on tab ${tabId}`);
+    try {
+      await sendMessageToTab(tabId, {
+        action: 'showBatchProgress',
+        current: current,
+        total: total,
+        status: 'capturing'
+      });
+    } catch (e) {
+      console.error(`[BatchCapture] Failed to show progress:`, e);
+    }
+
+    // 执行全页截图
+    console.log(`[BatchCapture] Starting full page capture for tab ${tabId}`);
+    const result = await captureFullPageForBatch(tabId, format, quality);
+    console.log(`[BatchCapture] Capture result for tab ${tabId}:`, result.success);
+    
+    // 隐藏进度
+    try {
+      await sendMessageToTab(tabId, { action: 'hideBatchProgress' });
+    } catch (e) {}
+    
+    return result;
+  } catch (error) {
+    console.error(`[BatchCapture] Batch capture tab ${tabId} failed:`, error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * 批量截图单个标签页（全页截图）
+ * @param {number} tabId - 标签页ID
+ * @param {string} format - 图片格式
+ * @param {number} quality - JPEG质量
+ * @returns {Promise<object>}
+ */
+async function captureBatchTab(tabId, format = 'png', quality = 92) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    
+    if (isRestrictedPage(tab.url)) {
+      return { success: false, error: 'RESTRICTED_PAGE' };
+    }
+
+    // 激活标签页以便截图
+    const currentTab = await chrome.tabs.query({ active: true, currentWindow: true });
+    const wasActive = currentTab[0]?.id === tabId;
+    
+    if (!wasActive) {
+      await chrome.tabs.update(tabId, { active: true });
+      // 等待标签页激活和渲染
+      await delay(500);
+    }
+
+    // 执行全页截图
+    const result = await captureFullPageForBatch(tabId, format, quality);
+    
+    return result;
+  } catch (error) {
+    console.error('Batch capture tab failed:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * 为批量截图优化的全页截图函数
+ * 不显示进度条，减少UI干扰
+ */
+async function captureFullPageForBatch(tabId, format = 'png', quality = 92) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    
+    if (isRestrictedPage(tab.url)) {
+      return { success: false, error: 'RESTRICTED_PAGE' };
+    }
+
+    // 获取页面滚动信息
+    const scrollInfo = await getScrollInfo(tabId);
+    if (!scrollInfo) {
+      return { success: false, error: 'CANNOT_GET_SCROLL_INFO' };
+    }
+
+    const { scrollHeight, viewportHeight, viewportWidth, devicePixelRatio } = scrollInfo;
+    const dpr = devicePixelRatio || 1;
+    
+    // 保存原始滚动位置
+    const originalScrollY = scrollInfo.currentScrollY;
+
+    // 先滚动到顶部并捕获第一张
+    await scrollToPosition(tabId, 0);
+    await delay(300);
+    
+    const captureOptions = { format: format === 'jpeg' ? 'jpeg' : 'png' };
+    if (format === 'jpeg') captureOptions.quality = quality;
+    
+    const firstDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, captureOptions);
+    const firstImgDimensions = await getImageDimensions(firstDataUrl);
+    
+    const captureWidth = firstImgDimensions.width;
+    const captureViewportHeight = firstImgDimensions.height;
+    const totalHeight = Math.ceil(scrollHeight * dpr);
+    const totalScrolls = Math.ceil(scrollHeight / viewportHeight);
+    
+    const screenshots = [{
+      dataUrl: firstDataUrl,
+      y: 0,
+      height: captureViewportHeight,
+      isLast: totalScrolls === 1
+    }];
+
+    // 如果需要多次截图，隐藏 fixed/sticky 元素
+    if (totalScrolls > 1) {
+      await hideFixedElements(tabId);
+    }
+
+    // 继续捕获剩余部分
+    for (let i = 1; i < totalScrolls; i++) {
+      const scrollY = i * viewportHeight;
+      const isLastScroll = i === totalScrolls - 1;
+      
+      await scrollToPosition(tabId, scrollY);
+      await delay(550);
+      
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, captureOptions);
+      
+      let captureHeight = captureViewportHeight;
+      if (isLastScroll) {
+        captureHeight = totalHeight - (i * captureViewportHeight);
+        if (captureHeight <= 0) captureHeight = captureViewportHeight;
+      }
+      
+      screenshots.push({
+        dataUrl,
+        y: i * captureViewportHeight,
+        height: captureHeight,
+        isLast: isLastScroll
+      });
+    }
+
+    // 恢复 fixed/sticky 元素
+    if (totalScrolls > 1) {
+      await restoreFixedElements(tabId);
+    }
+
+    // 恢复原始滚动位置
+    await scrollToPosition(tabId, originalScrollY);
+
+    // 拼接截图
+    const finalDataUrl = await stitchScreenshots(screenshots, captureWidth, totalHeight, captureViewportHeight, format, quality);
+    
+    return {
+      success: true,
+      dataUrl: finalDataUrl,
+      dimensions: { width: Math.round(captureWidth / dpr), height: scrollHeight }
+    };
+  } catch (error) {
+    console.error('Capture full page for batch failed:', error);
+    try {
+      await restoreFixedElements(tabId);
+    } catch (e) {}
+    return { success: false, error: error.message };
+  }
 }
 
 // ============================================
