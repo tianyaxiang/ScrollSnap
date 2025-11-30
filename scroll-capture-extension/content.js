@@ -66,6 +66,11 @@
   let startDocY = 0;
   let currentDocX = 0;
   let currentDocY = 0;
+  // 存储检测到的可滚动容器
+  let scrollableContainer = null;
+
+  // 选区容器（用于隔离样式）
+  let selectionContainer = null;
 
   /**
    * 创建选区覆盖层 UI（支持滚动）
@@ -74,72 +79,105 @@
     // 移除已存在的覆盖层
     removeSelectionOverlay();
 
+    // 创建一个隔离容器，防止页面样式干扰
+    selectionContainer = document.createElement('div');
+    selectionContainer.id = 'scroll-capture-container';
+    // 使用 all: initial 重置所有继承的样式
+    selectionContainer.style.cssText = `
+      all: initial;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 0;
+      height: 0;
+      z-index: 2147483646;
+      pointer-events: none;
+    `;
+
     // 创建覆盖层容器（fixed定位，不阻止滚动）
     selectionOverlay = document.createElement('div');
     selectionOverlay.id = 'scroll-capture-overlay';
     selectionOverlay.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.3);
-      cursor: crosshair;
-      z-index: 2147483646;
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      background: rgba(0, 0, 0, 0.3) !important;
+      cursor: crosshair !important;
+      z-index: 2147483646 !important;
+      pointer-events: auto !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      border: none !important;
+      box-sizing: border-box !important;
     `;
 
-    // 创建选区框（使用absolute定位，跟随文档滚动）
+    // 创建选区框（使用fixed定位，通过计算视口坐标来显示）
     selectionBox = document.createElement('div');
     selectionBox.id = 'scroll-capture-selection';
     selectionBox.style.cssText = `
-      position: absolute;
-      border: 2px dashed #4a90d9;
-      background: rgba(74, 144, 217, 0.1);
-      display: none;
-      z-index: 2147483647;
-      pointer-events: none;
+      position: fixed !important;
+      border: 2px dashed #4a90d9 !important;
+      background: rgba(74, 144, 217, 0.1) !important;
+      display: none !important;
+      z-index: 2147483647 !important;
+      pointer-events: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      box-sizing: border-box !important;
     `;
 
     // 创建尺寸信息显示（fixed定位，始终可见）
     selectionInfo = document.createElement('div');
     selectionInfo.id = 'scroll-capture-info';
     selectionInfo.style.cssText = `
-      position: fixed;
-      background: #4a90d9;
-      color: white;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 12px;
-      font-family: Arial, sans-serif;
-      display: none;
-      z-index: 2147483647;
-      pointer-events: none;
+      position: fixed !important;
+      background: #4a90d9 !important;
+      color: white !important;
+      padding: 4px 8px !important;
+      border-radius: 4px !important;
+      font-size: 12px !important;
+      font-family: Arial, sans-serif !important;
+      display: none !important;
+      z-index: 2147483647 !important;
+      pointer-events: none !important;
+      margin: 0 !important;
+      box-sizing: border-box !important;
+      line-height: 1.4 !important;
     `;
 
     // 创建操作提示
     selectionHint = document.createElement('div');
     selectionHint.id = 'scroll-capture-hint';
     selectionHint.style.cssText = `
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.8);
-      color: white;
-      padding: 10px 20px;
-      border-radius: 8px;
-      font-size: 14px;
-      font-family: Arial, sans-serif;
-      z-index: 2147483647;
-      pointer-events: none;
-      white-space: nowrap;
+      position: fixed !important;
+      bottom: 20px !important;
+      left: 50% !important;
+      transform: translateX(-50%) !important;
+      background: rgba(0, 0, 0, 0.8) !important;
+      color: white !important;
+      padding: 10px 20px !important;
+      border-radius: 8px !important;
+      font-size: 14px !important;
+      font-family: Arial, sans-serif !important;
+      z-index: 2147483647 !important;
+      pointer-events: none !important;
+      white-space: nowrap !important;
+      margin: 0 !important;
+      box-sizing: border-box !important;
+      line-height: 1.4 !important;
     `;
     selectionHint.textContent = chrome.i18n.getMessage('selectionHint') || 'Drag to select area, scroll to extend | ESC to cancel';
 
-    document.body.appendChild(selectionOverlay);
-    document.body.appendChild(selectionBox);
-    document.body.appendChild(selectionInfo);
-    document.body.appendChild(selectionHint);
+    // 将所有元素添加到隔离容器中
+    selectionContainer.appendChild(selectionOverlay);
+    selectionContainer.appendChild(selectionBox);
+    selectionContainer.appendChild(selectionInfo);
+    selectionContainer.appendChild(selectionHint);
+    
+    // 将容器添加到 body 末尾
+    document.body.appendChild(selectionContainer);
 
     // 绑定事件
     selectionOverlay.addEventListener('mousedown', onMouseDown);
@@ -150,6 +188,9 @@
     // 允许滚轮滚动
     selectionOverlay.addEventListener('wheel', onWheel, { passive: false });
 
+    // 强制重绘，确保样式生效
+    void selectionContainer.offsetHeight;
+
     return selectionOverlay;
   }
 
@@ -157,43 +198,165 @@
    * 移除选区覆盖层
    */
   function removeSelectionOverlay() {
+    // 移除事件监听
     if (selectionOverlay) {
       selectionOverlay.removeEventListener('mousedown', onMouseDown);
       selectionOverlay.removeEventListener('wheel', onWheel);
-      selectionOverlay.remove();
-      selectionOverlay = null;
-    }
-    if (selectionBox) {
-      selectionBox.remove();
-      selectionBox = null;
-    }
-    if (selectionInfo) {
-      selectionInfo.remove();
-      selectionInfo = null;
-    }
-    if (selectionHint) {
-      selectionHint.remove();
-      selectionHint = null;
     }
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
     document.removeEventListener('keydown', onKeyDown);
     document.removeEventListener('scroll', onScroll, true);
+    
+    // 移除整个容器（包含所有子元素）
+    if (selectionContainer) {
+      selectionContainer.remove();
+      selectionContainer = null;
+    }
+    
+    // 重置引用
+    selectionOverlay = null;
+    selectionBox = null;
+    selectionInfo = null;
+    selectionHint = null;
+    
+    // 重置状态
     isSelecting = false;
     hasStartedSelection = false;
+    scrollableContainer = null;
+  }
+
+  /**
+   * 检测页面中的主要可滚动容器
+   * 某些 SPA 网站（如 claude.ai）使用内部滚动容器而非 window 滚动
+   */
+  function detectScrollableContainer() {
+    // 如果已经检测过，直接返回
+    if (scrollableContainer !== null) {
+      return scrollableContainer || null;
+    }
+
+    // 常见的可滚动容器选择器
+    const commonSelectors = [
+      '[data-is-streaming]', // Claude.ai 对话容器
+      'main[class*="overflow"]',
+      'div[class*="overflow-y-auto"]',
+      'div[class*="overflow-auto"]',
+      '[role="main"]',
+      'main',
+      '.main-content',
+      '#main-content',
+      '.chat-messages',
+      '.messages-container',
+      '.conversation',
+    ];
+
+    // 首先尝试常见选择器
+    for (const selector of commonSelectors) {
+      try {
+        const elements = document.querySelectorAll(selector);
+        for (const el of elements) {
+          if (isScrollable(el)) {
+            scrollableContainer = el;
+            console.log('[ScrollCapture] Found scrollable container via selector:', selector);
+            return el;
+          }
+        }
+      } catch (e) {
+        // 选择器可能无效，忽略
+      }
+    }
+
+    // 如果没找到，遍历查找最大的可滚动容器
+    const allElements = document.querySelectorAll('div, main, section, article');
+    let bestContainer = null;
+    let bestScore = 0;
+
+    for (const el of allElements) {
+      if (isScrollable(el)) {
+        // 计算得分：可滚动高度 * 可见面积占比
+        const rect = el.getBoundingClientRect();
+        const visibleArea = rect.width * rect.height;
+        const viewportArea = window.innerWidth * window.innerHeight;
+        const areaRatio = visibleArea / viewportArea;
+        const scrollableHeight = el.scrollHeight - el.clientHeight;
+        
+        // 只考虑占据视口较大面积的容器
+        if (areaRatio > 0.3 && scrollableHeight > 100) {
+          const score = scrollableHeight * areaRatio;
+          if (score > bestScore) {
+            bestScore = score;
+            bestContainer = el;
+          }
+        }
+      }
+    }
+
+    if (bestContainer) {
+      scrollableContainer = bestContainer;
+      console.log('[ScrollCapture] Found scrollable container via scan:', bestContainer);
+      return bestContainer;
+    }
+
+    // 没有找到特殊容器，使用 window 滚动
+    scrollableContainer = false; // 标记为已检测但未找到
+    return null;
+  }
+
+  /**
+   * 检查元素是否可滚动
+   */
+  function isScrollable(el) {
+    if (!el) return false;
+    const style = window.getComputedStyle(el);
+    const overflowY = style.overflowY;
+    const isScrollableStyle = overflowY === 'auto' || overflowY === 'scroll';
+    const hasScrollableContent = el.scrollHeight > el.clientHeight + 10;
+    return isScrollableStyle && hasScrollableContent;
+  }
+
+  /**
+   * 获取当前滚动位置
+   */
+  function getCurrentScroll() {
+    const container = detectScrollableContainer();
+    if (container) {
+      return { x: container.scrollLeft, y: container.scrollTop };
+    }
+    return { x: window.scrollX, y: window.scrollY };
+  }
+
+  /**
+   * 滚动到指定位置（支持内部容器）
+   */
+  function scrollTo(x, y) {
+    const container = detectScrollableContainer();
+    if (container) {
+      container.scrollTo({ top: y, left: x, behavior: 'instant' });
+    } else {
+      window.scrollTo({ top: y, left: x, behavior: 'instant' });
+    }
+  }
+
+  /**
+   * 滚动指定距离（支持内部容器）
+   */
+  function scrollBy(deltaX, deltaY) {
+    const container = detectScrollableContainer();
+    if (container) {
+      container.scrollBy({ top: deltaY, left: deltaX, behavior: 'instant' });
+    } else {
+      window.scrollBy({ top: deltaY, left: deltaX, behavior: 'instant' });
+    }
   }
 
   /**
    * 滚轮事件处理 - 允许滚动页面
    */
   function onWheel(e) {
-    // 阻止默认行为但手动滚动页面
+    // 阻止默认行为但手动滚动页面/容器
     e.preventDefault();
-    window.scrollBy({
-      top: e.deltaY,
-      left: e.deltaX,
-      behavior: 'instant'
-    });
+    scrollBy(e.deltaX, e.deltaY);
   }
 
   /**
@@ -212,18 +375,27 @@
     isSelecting = true;
     hasStartedSelection = true;
     
+    // 重置滚动容器检测，确保每次选区都重新检测
+    scrollableContainer = null;
+    
     // 记录文档坐标（视口坐标 + 滚动偏移）
-    startDocX = e.clientX + window.scrollX;
-    startDocY = e.clientY + window.scrollY;
+    const scroll = getCurrentScroll();
+    startDocX = e.clientX + scroll.x;
+    startDocY = e.clientY + scroll.y;
     currentDocX = startDocX;
     currentDocY = startDocY;
     
-    selectionBox.style.display = 'block';
-    selectionInfo.style.display = 'block';
+    // 显示选区框和信息（使用 !important 确保样式生效）
+    if (selectionBox) {
+      selectionBox.style.cssText = selectionBox.style.cssText.replace('display: none', 'display: block');
+    }
+    if (selectionInfo) {
+      selectionInfo.style.cssText = selectionInfo.style.cssText.replace('display: none', 'display: block');
+    }
     
     // 隐藏提示
     if (selectionHint) {
-      selectionHint.style.display = 'none';
+      selectionHint.style.cssText = selectionHint.style.cssText.replace(/display:\s*[^;!]+/, 'display: none');
     }
     
     updateSelectionBox();
@@ -237,8 +409,9 @@
     if (!isSelecting) return;
 
     // 更新当前文档坐标
-    currentDocX = e.clientX + window.scrollX;
-    currentDocY = e.clientY + window.scrollY;
+    const scroll = getCurrentScroll();
+    currentDocX = e.clientX + scroll.x;
+    currentDocY = e.clientY + scroll.y;
 
     updateSelectionBox();
     
@@ -250,21 +423,40 @@
    * 更新选区框显示
    */
   function updateSelectionBox() {
+    if (!selectionBox || !selectionInfo) return;
+    
     const left = Math.min(startDocX, currentDocX);
     const top = Math.min(startDocY, currentDocY);
     const width = Math.abs(currentDocX - startDocX);
     const height = Math.abs(currentDocY - startDocY);
 
-    // 选区框使用文档坐标（absolute定位）
-    selectionBox.style.left = left + 'px';
-    selectionBox.style.top = top + 'px';
-    selectionBox.style.width = width + 'px';
-    selectionBox.style.height = height + 'px';
+    const scroll = getCurrentScroll();
 
-    // 尺寸信息使用视口坐标（fixed定位）
-    const viewLeft = left - window.scrollX;
-    const viewTop = top - window.scrollY;
+    // 计算视口坐标（fixed定位需要视口坐标）
+    const viewLeft = left - scroll.x;
+    const viewTop = top - scroll.y;
     
+    // 选区框使用视口坐标（fixed定位）
+    // 需要处理选区可能部分在视口外的情况
+    const visibleLeft = Math.max(0, viewLeft);
+    const visibleTop = Math.max(0, viewTop);
+    const visibleRight = Math.min(window.innerWidth, viewLeft + width);
+    const visibleBottom = Math.min(window.innerHeight, viewTop + height);
+    const visibleWidth = Math.max(0, visibleRight - visibleLeft);
+    const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+    
+    // 如果选区完全在视口外，隐藏选区框
+    if (visibleWidth <= 0 || visibleHeight <= 0) {
+      selectionBox.style.setProperty('display', 'none', 'important');
+    } else {
+      selectionBox.style.setProperty('display', 'block', 'important');
+      selectionBox.style.setProperty('left', viewLeft + 'px', 'important');
+      selectionBox.style.setProperty('top', viewTop + 'px', 'important');
+      selectionBox.style.setProperty('width', width + 'px', 'important');
+      selectionBox.style.setProperty('height', height + 'px', 'important');
+    }
+
+    // 更新尺寸信息（显示完整选区尺寸，不是可见部分）
     selectionInfo.textContent = `${Math.round(width)} × ${Math.round(height)}`;
     
     // 计算信息框位置，确保在视口内
@@ -288,8 +480,8 @@
       infoTop = window.innerHeight - 30;
     }
     
-    selectionInfo.style.left = infoLeft + 'px';
-    selectionInfo.style.top = infoTop + 'px';
+    selectionInfo.style.setProperty('left', infoLeft + 'px', 'important');
+    selectionInfo.style.setProperty('top', infoTop + 'px', 'important');
   }
 
   /**
@@ -300,25 +492,25 @@
     const edgeThreshold = 50;
     const scrollSpeed = 15;
     
-    let scrollX = 0;
-    let scrollY = 0;
+    let scrollDeltaX = 0;
+    let scrollDeltaY = 0;
     
     if (clientY < edgeThreshold) {
-      scrollY = -scrollSpeed;
+      scrollDeltaY = -scrollSpeed;
     } else if (clientY > window.innerHeight - edgeThreshold) {
-      scrollY = scrollSpeed;
+      scrollDeltaY = scrollSpeed;
     }
     
     if (clientX < edgeThreshold) {
-      scrollX = -scrollSpeed;
+      scrollDeltaX = -scrollSpeed;
     } else if (clientX > window.innerWidth - edgeThreshold) {
-      scrollX = scrollSpeed;
+      scrollDeltaX = scrollSpeed;
     }
     
-    if (scrollX !== 0 || scrollY !== 0) {
+    if (scrollDeltaX !== 0 || scrollDeltaY !== 0) {
       if (!autoScrollInterval) {
         autoScrollInterval = setInterval(() => {
-          window.scrollBy(scrollX, scrollY);
+          scrollBy(scrollDeltaX, scrollDeltaY);
         }, 16);
       }
     } else {
@@ -350,14 +542,35 @@
       return;
     }
 
+    // 获取滚动容器信息
+    const container = detectScrollableContainer();
+    let containerInfo = null;
+    if (container) {
+      const containerRect = container.getBoundingClientRect();
+      containerInfo = {
+        scrollTop: container.scrollTop,
+        scrollLeft: container.scrollLeft,
+        scrollHeight: container.scrollHeight,
+        scrollWidth: container.scrollWidth,
+        clientHeight: container.clientHeight,
+        clientWidth: container.clientWidth,
+        // 容器在视口中的位置
+        viewportTop: containerRect.top,
+        viewportLeft: containerRect.left,
+        viewportWidth: containerRect.width,
+        viewportHeight: containerRect.height
+      };
+    }
+
     // 发送选区信息到 background，使用文档坐标
     chrome.runtime.sendMessage({
       action: 'scrollSelectionComplete',
       rect: rect,
       viewportHeight: window.innerHeight,
       viewportWidth: window.innerWidth,
-      scrollHeight: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
-      devicePixelRatio: window.devicePixelRatio || 1
+      scrollHeight: container ? container.scrollHeight : Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
+      devicePixelRatio: window.devicePixelRatio || 1,
+      containerInfo: containerInfo
     });
 
     removeSelectionOverlay();
