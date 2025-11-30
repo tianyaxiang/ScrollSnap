@@ -142,6 +142,11 @@ async function captureFullPage(tabId, format = 'png', quality = 92, onProgress =
     if (onProgress) onProgress(progress);
     await sendMessageToTab(tabId, { action: 'updateProgress', percent: progress });
 
+    // 如果需要多次截图，隐藏 fixed/sticky 元素（第一屏已经截取，后续屏幕隐藏这些元素避免重复）
+    if (totalScrolls > 1) {
+      await hideFixedElements(tabId);
+    }
+
     // 继续捕获剩余部分
     for (let i = 1; i < totalScrolls; i++) {
       const scrollY = i * viewportHeight;
@@ -176,6 +181,11 @@ async function captureFullPage(tabId, format = 'png', quality = 92, onProgress =
       await sendMessageToTab(tabId, { action: 'updateProgress', percent: prog });
     }
 
+    // 恢复 fixed/sticky 元素的可见性
+    if (totalScrolls > 1) {
+      await restoreFixedElements(tabId);
+    }
+
     // 恢复原始滚动位置
     await scrollToPosition(tabId, originalScrollY);
     
@@ -192,8 +202,9 @@ async function captureFullPage(tabId, format = 'png', quality = 92, onProgress =
     };
   } catch (error) {
     console.error('Capture full page failed:', error);
-    // 确保隐藏进度指示器
+    // 确保恢复 fixed/sticky 元素和隐藏进度指示器
     try {
+      await restoreFixedElements(tabId);
       await sendMessageToTab(tabId, { action: 'hideProgress' });
     } catch (e) {}
     return { success: false, error: error.message };
@@ -265,6 +276,67 @@ async function sendMessageToTab(tabId, message) {
  */
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * 隐藏页面中的 fixed/sticky 定位元素
+ * 这些元素在滚动截图时会重复出现，需要在第一屏之后隐藏
+ * @param {number} tabId
+ */
+async function hideFixedElements(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      // 存储被隐藏元素的原始样式，以便后续恢复
+      window.__scrollCaptureHiddenElements = [];
+      
+      const allElements = document.querySelectorAll('*');
+      for (const el of allElements) {
+        // 跳过我们自己的截图 UI 元素
+        if (el.id && el.id.startsWith('scroll-capture-')) continue;
+        
+        const style = window.getComputedStyle(el);
+        const position = style.position;
+        
+        // 检测 fixed 和 sticky 定位的元素
+        if (position === 'fixed' || position === 'sticky') {
+          // 记录原始的 visibility 值
+          window.__scrollCaptureHiddenElements.push({
+            element: el,
+            originalVisibility: el.style.visibility,
+            originalDisplay: el.style.display
+          });
+          // 使用 visibility: hidden 而不是 display: none，保持布局不变
+          el.style.visibility = 'hidden';
+        }
+      }
+      
+      console.log('[ScrollCapture] Hidden', window.__scrollCaptureHiddenElements.length, 'fixed/sticky elements');
+    }
+  });
+}
+
+/**
+ * 恢复被隐藏的 fixed/sticky 定位元素
+ * @param {number} tabId
+ */
+async function restoreFixedElements(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      if (!window.__scrollCaptureHiddenElements) return;
+      
+      for (const item of window.__scrollCaptureHiddenElements) {
+        // 恢复原始的 visibility 值
+        item.element.style.visibility = item.originalVisibility;
+      }
+      
+      console.log('[ScrollCapture] Restored', window.__scrollCaptureHiddenElements.length, 'fixed/sticky elements');
+      
+      // 清理
+      delete window.__scrollCaptureHiddenElements;
+    }
+  });
 }
 
 
@@ -776,6 +848,9 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
 
     // 需要滚动截图
     await sendMessageToTab(tabId, { action: 'showProgress', percent: 0 });
+    
+    // 选区截图时，所有屏幕都隐藏 fixed/sticky 元素
+    await hideFixedElements(tabId);
 
     const screenshots = [];
     let capturedHeight = 0;
@@ -862,6 +937,9 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
       await sendMessageToTab(tabId, { action: 'updateProgress', percent: progress });
     }
 
+    // 恢复 fixed/sticky 元素的可见性
+    await restoreFixedElements(tabId);
+
     // 恢复滚动位置
     if (useContainer) {
       await scrollContainerTo(tabId, originalScroll.x, originalScroll.y);
@@ -883,6 +961,7 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
   } catch (error) {
     console.error('Capture scroll selection failed:', error);
     try {
+      await restoreFixedElements(tabId);
       await sendMessageToTab(tabId, { action: 'hideProgress' });
     } catch (e) {}
     return { success: false, error: error.message };
