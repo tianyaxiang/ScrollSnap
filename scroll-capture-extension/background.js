@@ -561,7 +561,7 @@ async function handleMessage(message, sender) {
     }
 
     case 'selectionComplete': {
-      // 选区完成，捕获选区截图
+      // 选区完成，捕获选区截图（旧版，视口内选区）
       const tabId = sender.tab?.id;
       if (!tabId) return { success: false, error: 'NO_TAB_ID' };
       const dpr = params.devicePixelRatio || 1;
@@ -585,6 +585,36 @@ async function handleMessage(message, sender) {
       return result;
     }
 
+    case 'scrollSelectionComplete': {
+      // 滚动选区完成，捕获可能跨越多个视口的选区
+      const tabId = sender.tab?.id;
+      if (!tabId) return { success: false, error: 'NO_TAB_ID' };
+      const result = await captureScrollSelection(
+        tabId,
+        params.rect,
+        params.viewportHeight,
+        params.viewportWidth,
+        params.devicePixelRatio || 1,
+        params.format,
+        params.quality
+      );
+      if (result.success) {
+        await chrome.storage.local.set({
+          lastCapture: {
+            dataUrl: result.dataUrl,
+            dimensions: result.dimensions,
+            timestamp: Date.now()
+          }
+        });
+        await sendMessageToTab(tabId, {
+          action: 'showPreview',
+          dataUrl: result.dataUrl,
+          dimensions: result.dimensions
+        });
+      }
+      return result;
+    }
+
     case 'selectionCancelled': {
       // 选区取消，无需处理
       return { success: true };
@@ -593,6 +623,174 @@ async function handleMessage(message, sender) {
     default:
       return { success: false, error: 'UNKNOWN_ACTION' };
   }
+}
+
+/**
+ * 捕获滚动选区截图（支持跨越多个视口）
+ * @param {number} tabId
+ * @param {object} rect - 选区矩形（文档坐标）{x, y, width, height}
+ * @param {number} viewportHeight - 视口高度
+ * @param {number} viewportWidth - 视口宽度
+ * @param {number} dpr - 设备像素比
+ * @param {string} format
+ * @param {number} quality
+ * @returns {Promise<object>}
+ */
+async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth, dpr = 1, format = 'png', quality = 92) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (isRestrictedPage(tab.url)) {
+      return { success: false, error: 'RESTRICTED_PAGE' };
+    }
+
+    // 保存原始滚动位置
+    const scrollInfo = await getScrollInfo(tabId);
+    const originalScrollY = scrollInfo?.currentScrollY || 0;
+
+    // 计算选区在文档中的位置
+    const selectionTop = rect.y;
+    const selectionBottom = rect.y + rect.height;
+    const selectionLeft = rect.x;
+    const selectionWidth = rect.width;
+    const selectionHeight = rect.height;
+
+    // 判断是否需要滚动截图
+    const needsScrollCapture = selectionHeight > viewportHeight;
+
+    if (!needsScrollCapture) {
+      // 选区在单个视口内，直接截图裁剪
+      // 滚动到选区可见的位置
+      const targetScrollY = Math.max(0, selectionTop - 50);
+      await scrollToPosition(tabId, targetScrollY);
+      await delay(300);
+
+      const captureOptions = { format: format === 'jpeg' ? 'jpeg' : 'png' };
+      if (format === 'jpeg') captureOptions.quality = quality;
+
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, captureOptions);
+      
+      // 计算选区在当前视口中的位置
+      const viewportRect = {
+        x: selectionLeft,
+        y: selectionTop - targetScrollY,
+        width: selectionWidth,
+        height: selectionHeight
+      };
+
+      const croppedDataUrl = await cropImage(dataUrl, viewportRect, format, quality, dpr);
+      
+      // 恢复滚动位置
+      await scrollToPosition(tabId, originalScrollY);
+
+      return {
+        success: true,
+        dataUrl: croppedDataUrl,
+        dimensions: { width: Math.round(selectionWidth), height: Math.round(selectionHeight) }
+      };
+    }
+
+    // 需要滚动截图
+    await sendMessageToTab(tabId, { action: 'showProgress', percent: 0 });
+
+    const captureOptions = { format: format === 'jpeg' ? 'jpeg' : 'png' };
+    if (format === 'jpeg') captureOptions.quality = quality;
+
+    // 计算需要截取的滚动段
+    const screenshots = [];
+    const effectiveViewportHeight = viewportHeight - 50; // 留一些重叠区域
+    const totalScrolls = Math.ceil(selectionHeight / effectiveViewportHeight);
+
+    for (let i = 0; i < totalScrolls; i++) {
+      // 计算当前段的滚动位置
+      const segmentTop = selectionTop + (i * effectiveViewportHeight);
+      const scrollY = Math.max(0, segmentTop);
+      
+      await scrollToPosition(tabId, scrollY);
+      await delay(550);
+
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, captureOptions);
+      
+      // 计算这一段在选区中的位置
+      const captureTop = scrollY;
+      const captureBottom = scrollY + viewportHeight;
+      
+      // 计算与选区的交集
+      const intersectTop = Math.max(selectionTop, captureTop);
+      const intersectBottom = Math.min(selectionBottom, captureBottom);
+      const intersectHeight = intersectBottom - intersectTop;
+
+      if (intersectHeight > 0) {
+        // 计算在截图中的裁剪区域
+        const cropY = intersectTop - captureTop;
+        const cropRect = {
+          x: selectionLeft,
+          y: cropY,
+          width: selectionWidth,
+          height: intersectHeight
+        };
+
+        const croppedDataUrl = await cropImage(dataUrl, cropRect, format, quality, dpr);
+        
+        screenshots.push({
+          dataUrl: croppedDataUrl,
+          y: intersectTop - selectionTop, // 在最终图片中的Y位置
+          height: intersectHeight * dpr
+        });
+      }
+
+      // 更新进度
+      const progress = Math.round(((i + 1) / totalScrolls) * 100);
+      await sendMessageToTab(tabId, { action: 'updateProgress', percent: progress });
+    }
+
+    // 恢复滚动位置
+    await scrollToPosition(tabId, originalScrollY);
+    await sendMessageToTab(tabId, { action: 'hideProgress' });
+
+    // 拼接截图
+    const finalWidth = Math.round(selectionWidth * dpr);
+    const finalHeight = Math.round(selectionHeight * dpr);
+    const finalDataUrl = await stitchSelectionScreenshots(screenshots, finalWidth, finalHeight, dpr, format, quality);
+
+    return {
+      success: true,
+      dataUrl: finalDataUrl,
+      dimensions: { width: Math.round(selectionWidth), height: Math.round(selectionHeight) }
+    };
+  } catch (error) {
+    console.error('Capture scroll selection failed:', error);
+    try {
+      await sendMessageToTab(tabId, { action: 'hideProgress' });
+    } catch (e) {}
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * 拼接选区截图
+ */
+async function stitchSelectionScreenshots(screenshots, totalWidth, totalHeight, dpr, format, quality) {
+  const canvas = new OffscreenCanvas(totalWidth, totalHeight);
+  const ctx = canvas.getContext('2d');
+
+  let currentY = 0;
+  for (const screenshot of screenshots) {
+    const img = await createImageBitmap(await fetch(screenshot.dataUrl).then(r => r.blob()));
+    ctx.drawImage(img, 0, currentY);
+    currentY += img.height;
+  }
+
+  const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
+  const blob = await canvas.convertToBlob({
+    type: mimeType,
+    quality: format === 'jpeg' ? quality / 100 : undefined
+  });
+
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
 }
 
 /**

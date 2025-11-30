@@ -136,8 +136,12 @@
     "description": "Guide feature 3 title"
   },
   "guideFeature3Desc": {
-    "message": "自由选择截图区域",
+    "message": "自由选择截图区域，支持滚动扩展选区",
     "description": "Guide feature 3 description"
+  },
+  "selectionHint": {
+    "message": "拖拽选择区域，可滚动页面扩展选区 | ESC 取消",
+    "description": "Selection mode hint"
   },
   "guideShortcuts": {
     "message": "快捷键提示:",

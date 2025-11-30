@@ -136,8 +136,12 @@
     "description": "Guide feature 3 title"
   },
   "guideFeature3Desc": {
-    "message": "Freely select capture area",
+    "message": "Freely select capture area with scroll support",
     "description": "Guide feature 3 description"
+  },
+  "selectionHint": {
+    "message": "Drag to select area, scroll to extend selection | ESC to cancel",
+    "description": "Selection mode hint"
   },
   "guideShortcuts": {
     "message": "Keyboard Shortcuts:",

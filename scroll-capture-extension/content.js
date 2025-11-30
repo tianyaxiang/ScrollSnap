@@ -52,24 +52,29 @@
 
 
   // ============================================
-  // 3.2 选区截图交互
+  // 3.2 选区截图交互（支持滚动）
   // ============================================
 
   let selectionOverlay = null;
   let selectionBox = null;
   let selectionInfo = null;
+  let selectionHint = null;
   let isSelecting = false;
-  let startX = 0;
-  let startY = 0;
+  let hasStartedSelection = false;
+  // 使用文档坐标（绝对坐标）来记录选区
+  let startDocX = 0;
+  let startDocY = 0;
+  let currentDocX = 0;
+  let currentDocY = 0;
 
   /**
-   * 创建选区覆盖层 UI
+   * 创建选区覆盖层 UI（支持滚动）
    */
   function createSelectionOverlay() {
     // 移除已存在的覆盖层
     removeSelectionOverlay();
 
-    // 创建覆盖层
+    // 创建覆盖层容器（fixed定位，不阻止滚动）
     selectionOverlay = document.createElement('div');
     selectionOverlay.id = 'scroll-capture-overlay';
     selectionOverlay.style.cssText = `
@@ -83,11 +88,11 @@
       z-index: 2147483646;
     `;
 
-    // 创建选区框
+    // 创建选区框（使用absolute定位，跟随文档滚动）
     selectionBox = document.createElement('div');
     selectionBox.id = 'scroll-capture-selection';
     selectionBox.style.cssText = `
-      position: fixed;
+      position: absolute;
       border: 2px dashed #4a90d9;
       background: rgba(74, 144, 217, 0.1);
       display: none;
@@ -95,7 +100,7 @@
       pointer-events: none;
     `;
 
-    // 创建尺寸信息显示
+    // 创建尺寸信息显示（fixed定位，始终可见）
     selectionInfo = document.createElement('div');
     selectionInfo.id = 'scroll-capture-info';
     selectionInfo.style.cssText = `
@@ -111,15 +116,39 @@
       pointer-events: none;
     `;
 
+    // 创建操作提示
+    selectionHint = document.createElement('div');
+    selectionHint.id = 'scroll-capture-hint';
+    selectionHint.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      z-index: 2147483647;
+      pointer-events: none;
+      white-space: nowrap;
+    `;
+    selectionHint.textContent = chrome.i18n.getMessage('selectionHint') || 'Drag to select area, scroll to extend | ESC to cancel';
+
     document.body.appendChild(selectionOverlay);
     document.body.appendChild(selectionBox);
     document.body.appendChild(selectionInfo);
+    document.body.appendChild(selectionHint);
 
     // 绑定事件
     selectionOverlay.addEventListener('mousedown', onMouseDown);
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
     document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('scroll', onScroll, true);
+    // 允许滚轮滚动
+    selectionOverlay.addEventListener('wheel', onWheel, { passive: false });
 
     return selectionOverlay;
   }
@@ -130,6 +159,7 @@
   function removeSelectionOverlay() {
     if (selectionOverlay) {
       selectionOverlay.removeEventListener('mousedown', onMouseDown);
+      selectionOverlay.removeEventListener('wheel', onWheel);
       selectionOverlay.remove();
       selectionOverlay = null;
     }
@@ -141,10 +171,38 @@
       selectionInfo.remove();
       selectionInfo = null;
     }
+    if (selectionHint) {
+      selectionHint.remove();
+      selectionHint = null;
+    }
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
     document.removeEventListener('keydown', onKeyDown);
+    document.removeEventListener('scroll', onScroll, true);
     isSelecting = false;
+    hasStartedSelection = false;
+  }
+
+  /**
+   * 滚轮事件处理 - 允许滚动页面
+   */
+  function onWheel(e) {
+    // 阻止默认行为但手动滚动页面
+    e.preventDefault();
+    window.scrollBy({
+      top: e.deltaY,
+      left: e.deltaX,
+      behavior: 'instant'
+    });
+  }
+
+  /**
+   * 滚动事件处理 - 更新选区显示
+   */
+  function onScroll() {
+    if (hasStartedSelection) {
+      updateSelectionBox();
+    }
   }
 
   /**
@@ -152,16 +210,23 @@
    */
   function onMouseDown(e) {
     isSelecting = true;
-    startX = e.clientX;
-    startY = e.clientY;
+    hasStartedSelection = true;
     
-    selectionBox.style.left = startX + 'px';
-    selectionBox.style.top = startY + 'px';
-    selectionBox.style.width = '0px';
-    selectionBox.style.height = '0px';
+    // 记录文档坐标（视口坐标 + 滚动偏移）
+    startDocX = e.clientX + window.scrollX;
+    startDocY = e.clientY + window.scrollY;
+    currentDocX = startDocX;
+    currentDocY = startDocY;
+    
     selectionBox.style.display = 'block';
     selectionInfo.style.display = 'block';
     
+    // 隐藏提示
+    if (selectionHint) {
+      selectionHint.style.display = 'none';
+    }
+    
+    updateSelectionBox();
     e.preventDefault();
   }
 
@@ -171,27 +236,96 @@
   function onMouseMove(e) {
     if (!isSelecting) return;
 
-    const currentX = e.clientX;
-    const currentY = e.clientY;
+    // 更新当前文档坐标
+    currentDocX = e.clientX + window.scrollX;
+    currentDocY = e.clientY + window.scrollY;
 
-    const left = Math.min(startX, currentX);
-    const top = Math.min(startY, currentY);
-    const width = Math.abs(currentX - startX);
-    const height = Math.abs(currentY - startY);
+    updateSelectionBox();
+    
+    // 边缘自动滚动
+    autoScrollAtEdge(e.clientX, e.clientY);
+  }
 
+  /**
+   * 更新选区框显示
+   */
+  function updateSelectionBox() {
+    const left = Math.min(startDocX, currentDocX);
+    const top = Math.min(startDocY, currentDocY);
+    const width = Math.abs(currentDocX - startDocX);
+    const height = Math.abs(currentDocY - startDocY);
+
+    // 选区框使用文档坐标（absolute定位）
     selectionBox.style.left = left + 'px';
     selectionBox.style.top = top + 'px';
     selectionBox.style.width = width + 'px';
     selectionBox.style.height = height + 'px';
 
-    // 更新尺寸信息显示
-    selectionInfo.textContent = `${width} × ${height}`;
-    selectionInfo.style.left = (left + width + 10) + 'px';
-    selectionInfo.style.top = top + 'px';
-
+    // 尺寸信息使用视口坐标（fixed定位）
+    const viewLeft = left - window.scrollX;
+    const viewTop = top - window.scrollY;
+    
+    selectionInfo.textContent = `${Math.round(width)} × ${Math.round(height)}`;
+    
+    // 计算信息框位置，确保在视口内
+    let infoLeft = viewLeft + width + 10;
+    let infoTop = viewTop;
+    
     // 如果超出右边界，显示在左侧
-    if (left + width + 100 > window.innerWidth) {
-      selectionInfo.style.left = (left - 80) + 'px';
+    if (infoLeft + 80 > window.innerWidth) {
+      infoLeft = viewLeft - 80;
+    }
+    // 如果超出左边界
+    if (infoLeft < 10) {
+      infoLeft = 10;
+    }
+    // 如果超出上边界
+    if (infoTop < 10) {
+      infoTop = 10;
+    }
+    // 如果超出下边界
+    if (infoTop > window.innerHeight - 30) {
+      infoTop = window.innerHeight - 30;
+    }
+    
+    selectionInfo.style.left = infoLeft + 'px';
+    selectionInfo.style.top = infoTop + 'px';
+  }
+
+  /**
+   * 边缘自动滚动
+   */
+  let autoScrollInterval = null;
+  function autoScrollAtEdge(clientX, clientY) {
+    const edgeThreshold = 50;
+    const scrollSpeed = 15;
+    
+    let scrollX = 0;
+    let scrollY = 0;
+    
+    if (clientY < edgeThreshold) {
+      scrollY = -scrollSpeed;
+    } else if (clientY > window.innerHeight - edgeThreshold) {
+      scrollY = scrollSpeed;
+    }
+    
+    if (clientX < edgeThreshold) {
+      scrollX = -scrollSpeed;
+    } else if (clientX > window.innerWidth - edgeThreshold) {
+      scrollX = scrollSpeed;
+    }
+    
+    if (scrollX !== 0 || scrollY !== 0) {
+      if (!autoScrollInterval) {
+        autoScrollInterval = setInterval(() => {
+          window.scrollBy(scrollX, scrollY);
+        }, 16);
+      }
+    } else {
+      if (autoScrollInterval) {
+        clearInterval(autoScrollInterval);
+        autoScrollInterval = null;
+      }
     }
   }
 
@@ -201,6 +335,12 @@
   function onMouseUp() {
     if (!isSelecting) return;
     isSelecting = false;
+    
+    // 停止自动滚动
+    if (autoScrollInterval) {
+      clearInterval(autoScrollInterval);
+      autoScrollInterval = null;
+    }
 
     const rect = getSelectionRect();
     
@@ -210,10 +350,13 @@
       return;
     }
 
-    // 发送选区信息到 background，包含设备像素比
+    // 发送选区信息到 background，使用文档坐标
     chrome.runtime.sendMessage({
-      action: 'selectionComplete',
+      action: 'scrollSelectionComplete',
       rect: rect,
+      viewportHeight: window.innerHeight,
+      viewportWidth: window.innerWidth,
+      scrollHeight: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
       devicePixelRatio: window.devicePixelRatio || 1
     });
 
@@ -225,24 +368,30 @@
    */
   function onKeyDown(e) {
     if (e.key === 'Escape') {
+      // 停止自动滚动
+      if (autoScrollInterval) {
+        clearInterval(autoScrollInterval);
+        autoScrollInterval = null;
+      }
       removeSelectionOverlay();
       chrome.runtime.sendMessage({ action: 'selectionCancelled' });
     }
   }
 
   /**
-   * 获取当前选区矩形
-   * @returns {SelectionRect}
+   * 获取当前选区矩形（文档坐标）
    */
   function getSelectionRect() {
-    if (!selectionBox) return null;
+    const left = Math.min(startDocX, currentDocX);
+    const top = Math.min(startDocY, currentDocY);
+    const width = Math.abs(currentDocX - startDocX);
+    const height = Math.abs(currentDocY - startDocY);
     
-    const rect = selectionBox.getBoundingClientRect();
     return {
-      x: rect.left,
-      y: rect.top,
-      width: rect.width,
-      height: rect.height
+      x: left,
+      y: top,
+      width: width,
+      height: height
     };
   }
 
