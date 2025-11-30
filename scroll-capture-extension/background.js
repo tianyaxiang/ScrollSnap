@@ -1511,15 +1511,15 @@ async function startBatchCaptureFromStorage() {
       return;
     }
     
-    const { tabIds, tabInfoMap, format, quality, originalTabId } = task;
+    const { tabIds, tabInfoMap, format, quality, originalTabId, captureMode } = task;
     
     // 清除任务
     await chrome.storage.local.remove(['batchCaptureTask']);
     
-    console.log('[BatchCapture] Original tab ID:', originalTabId);
+    console.log('[BatchCapture] Original tab ID:', originalTabId, 'Mode:', captureMode);
     
-    // 执行批量截图，传入进度回调
-    const result = await batchCaptureAllTabs(tabIds, format, quality, tabInfoMap, originalTabId);
+    // 执行批量截图，传入进度回调和截图模式
+    const result = await batchCaptureAllTabs(tabIds, format, quality, tabInfoMap, originalTabId, captureMode);
     
     // 准备结果数据用于预览
     const resultsForPreview = [];
@@ -1570,7 +1570,7 @@ async function startBatchCaptureFromStorage() {
  * @param {number} progressTabId - 显示进度的标签页ID
  * @returns {Promise<object>}
  */
-async function batchCaptureAllTabs(tabIds, format = 'png', quality = 92, tabInfoMap = {}, progressTabId = null) {
+async function batchCaptureAllTabs(tabIds, format = 'png', quality = 92, tabInfoMap = {}, progressTabId = null, captureMode = 'full') {
   const results = {};
   const total = tabIds.length;
   
@@ -1578,9 +1578,8 @@ async function batchCaptureAllTabs(tabIds, format = 'png', quality = 92, tabInfo
     const tabId = tabIds[i];
     
     try {
-      // captureBatchTab 会切换到目标标签页
       // 在截图前，在目标标签页显示进度
-      const result = await captureBatchTabWithProgress(tabId, format, quality, i + 1, total);
+      const result = await captureBatchTabWithProgress(tabId, format, quality, i + 1, total, captureMode);
       results[tabId] = result;
     } catch (error) {
       results[tabId] = { success: false, error: error.message };
@@ -1593,8 +1592,8 @@ async function batchCaptureAllTabs(tabIds, format = 'png', quality = 92, tabInfo
 /**
  * 带进度显示的单个标签页截图
  */
-async function captureBatchTabWithProgress(tabId, format, quality, current, total) {
-  console.log(`[BatchCapture] Capturing tab ${tabId} (${current}/${total})`);
+async function captureBatchTabWithProgress(tabId, format, quality, current, total, captureMode = 'full') {
+  console.log(`[BatchCapture] Capturing tab ${tabId} (${current}/${total}) mode: ${captureMode}`);
   try {
     const tab = await chrome.tabs.get(tabId);
     console.log(`[BatchCapture] Tab URL: ${tab.url}`);
@@ -1622,9 +1621,15 @@ async function captureBatchTabWithProgress(tabId, format, quality, current, tota
       console.error(`[BatchCapture] Failed to show progress:`, e);
     }
 
-    // 执行全页截图
-    console.log(`[BatchCapture] Starting full page capture for tab ${tabId}`);
-    const result = await captureFullPageForBatch(tabId, format, quality);
+    // 根据模式执行不同的截图
+    let result;
+    if (captureMode === 'visible') {
+      console.log(`[BatchCapture] Starting visible area capture for tab ${tabId}`);
+      result = await captureVisibleArea(tabId, format, quality);
+    } else {
+      console.log(`[BatchCapture] Starting full page capture for tab ${tabId}`);
+      result = await captureFullPageForBatch(tabId, format, quality);
+    }
     console.log(`[BatchCapture] Capture result for tab ${tabId}:`, result.success);
     
     // 隐藏进度

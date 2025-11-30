@@ -770,8 +770,20 @@ body {
   justify-content: center;
 }
 
-.batch-actions .action-btn.full-width {
-  width: 100%;
+.batch-actions.two-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.batch-actions.two-buttons .action-btn {
+  flex: 1;
+  padding: 10px 8px;
+  font-size: 13px;
+}
+
+.batch-actions.two-buttons .action-btn svg {
+  width: 18px;
+  height: 18px;
 }
 
 .batch-note {

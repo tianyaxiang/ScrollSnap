@@ -213,6 +213,14 @@
     "message": "Start Capture",
     "description": "Start batch capture button"
   },
+  "batchFullPage": {
+    "message": "Full Page",
+    "description": "Batch full page capture button"
+  },
+  "batchVisible": {
+    "message": "Visible Area",
+    "description": "Batch visible area capture button"
+  },
   "batchDownloadAll": {
     "message": "Download All",
     "description": "Download all button"

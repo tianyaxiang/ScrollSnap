@@ -50,7 +50,8 @@ const elements = {
   batchSelectAll: document.getElementById('batch-select-all'),
   batchSelectedCount: document.getElementById('batch-selected-count'),
   batchTabsList: document.getElementById('batch-tabs-list'),
-  btnBatchCapture: document.getElementById('btn-batch-capture'),
+  btnBatchFull: document.getElementById('btn-batch-full'),
+  btnBatchVisible: document.getElementById('btn-batch-visible'),
   
   // Settings elements
   btnSettingsBack: document.getElementById('btn-settings-back'),
@@ -118,7 +119,8 @@ function bindEvents() {
   // Batch capture actions
   elements.btnBatchBack.addEventListener('click', showMainMenu);
   elements.batchSelectAll.addEventListener('change', onBatchSelectAllChange);
-  elements.btnBatchCapture.addEventListener('click', startBatchCapture);
+  elements.btnBatchFull.addEventListener('click', () => startBatchCapture('full'));
+  elements.btnBatchVisible.addEventListener('click', () => startBatchCapture('visible'));
   
   // Settings actions
   elements.btnSettingsBack.addEventListener('click', showMainMenu);
@@ -778,14 +780,16 @@ function updateBatchSelectedCount() {
   const count = state.batchSelectedIds.size;
   const text = getMessage('batchSelectedCount', `已选择 ${count} 个标签`).replace('$COUNT$', count);
   elements.batchSelectedCount.textContent = text;
-  elements.btnBatchCapture.disabled = count === 0 || state.isBatchCapturing;
+  const disabled = count === 0 || state.isBatchCapturing;
+  elements.btnBatchFull.disabled = disabled;
+  elements.btnBatchVisible.disabled = disabled;
 }
 
 /**
  * Start batch capture
- * 批量截图会在后台执行，截图完成后自动下载
+ * @param {string} mode - 'full' 全页截图 | 'visible' 可视区域截图
  */
-async function startBatchCapture() {
+async function startBatchCapture(mode) {
   if (state.isBatchCapturing || state.batchSelectedIds.size === 0) return;
   
   const selectedTabIds = Array.from(state.batchSelectedIds);
@@ -809,12 +813,12 @@ async function startBatchCapture() {
       format: state.selectedFormat,
       quality: state.jpegQuality,
       originalTabId: originalTabId,
+      captureMode: mode, // 'full' 或 'visible'
       timestamp: Date.now()
     }
   });
   
   // 发送开始批量截图的消息，然后关闭 popup
-  // 因为切换标签页会导致 popup 关闭，所以我们主动关闭并让 background 处理
   chrome.runtime.sendMessage({
     action: 'startBatchCapture'
   });

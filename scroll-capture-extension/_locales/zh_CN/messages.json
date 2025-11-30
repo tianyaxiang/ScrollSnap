@@ -213,6 +213,14 @@
     "message": "开始截图",
     "description": "Start batch capture button"
   },
+  "batchFullPage": {
+    "message": "全页截图",
+    "description": "Batch full page capture button"
+  },
+  "batchVisible": {
+    "message": "可视区截图",
+    "description": "Batch visible area capture button"
+  },
   "batchDownloadAll": {
     "message": "批量下载",
     "description": "Download all button"
