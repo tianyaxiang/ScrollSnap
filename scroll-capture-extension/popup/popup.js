@@ -46,6 +46,12 @@ const elements = {
   qualityValue: document.getElementById('quality-value'),
   qualitySetting: document.getElementById('quality-setting'),
   
+  // Shortcut elements
+  shortcutFullPage: document.getElementById('shortcut-full-page'),
+  shortcutVisible: document.getElementById('shortcut-visible'),
+  shortcutSelection: document.getElementById('shortcut-selection'),
+  btnEditShortcuts: document.getElementById('btn-edit-shortcuts'),
+  
   // Guide elements
   guideOverlay: document.getElementById('guide-overlay'),
   btnGuideClose: document.getElementById('btn-guide-close'),
@@ -73,6 +79,7 @@ async function init() {
   bindEvents();
   applyI18n();
   loadSettings();
+  loadShortcuts();
   checkLastCapture();
   checkFirstInstall();
 }
@@ -98,6 +105,7 @@ function bindEvents() {
   elements.settingLanguage.addEventListener('change', onLanguageChange);
   elements.settingFormat.addEventListener('change', onSettingFormatChange);
   elements.settingQuality.addEventListener('input', onQualityChange);
+  elements.btnEditShortcuts.addEventListener('click', openShortcutsSettings);
   
   // Guide actions
   elements.btnGuideClose.addEventListener('click', closeGuide);
@@ -447,6 +455,43 @@ function updateQualityVisibility(format) {
   if (elements.qualitySetting) {
     elements.qualitySetting.style.display = format === 'jpeg' ? 'flex' : 'none';
   }
+}
+
+/**
+ * Load and display keyboard shortcuts
+ */
+async function loadShortcuts() {
+  try {
+    const commands = await chrome.commands.getAll();
+    const shortcutMap = {
+      'capture-full-page': elements.shortcutFullPage,
+      'capture-visible': elements.shortcutVisible,
+      'capture-selection': elements.shortcutSelection
+    };
+    
+    for (const command of commands) {
+      const element = shortcutMap[command.name];
+      if (element) {
+        // 显示实际快捷键，如果未设置则显示"未设置"
+        element.textContent = command.shortcut || getMessage('shortcutNotSet', '未设置');
+        if (!command.shortcut) {
+          element.classList.add('not-set');
+        } else {
+          element.classList.remove('not-set');
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load shortcuts:', error);
+  }
+}
+
+/**
+ * Open Chrome's keyboard shortcuts settings page
+ */
+function openShortcutsSettings(e) {
+  e.preventDefault();
+  chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
 }
 
 // ============================================

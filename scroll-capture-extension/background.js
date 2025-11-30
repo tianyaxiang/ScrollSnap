@@ -119,7 +119,10 @@ async function captureFullPage(tabId, format = 'png', quality = 92, onProgress =
     const captureOptions = { format: format === 'jpeg' ? 'jpeg' : 'png' };
     if (format === 'jpeg') captureOptions.quality = quality;
     
+    // 截图前隐藏进度条，截图后恢复
+    await sendMessageToTab(tabId, { action: 'hideProgress' });
     const firstDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, captureOptions);
+    await sendMessageToTab(tabId, { action: 'showProgress', percent: 0 });
     const firstImgDimensions = await getImageDimensions(firstDataUrl);
     
     // 实际截图的尺寸（考虑 DPI）
@@ -158,7 +161,10 @@ async function captureFullPage(tabId, format = 'png', quality = 92, onProgress =
       // 等待页面渲染，并确保不超过 captureVisibleTab 的调用频率限制（每秒最多2次）
       await delay(550);
       
+      // 截图前隐藏进度条，截图后恢复
+      await sendMessageToTab(tabId, { action: 'hideProgress' });
       const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, captureOptions);
+      await sendMessageToTab(tabId, { action: 'showProgress', percent: Math.round((i / totalScrolls) * 100) });
       
       // 计算实际捕获高度（按实际像素）
       let captureHeight = captureViewportHeight;
@@ -266,7 +272,19 @@ async function sendMessageToTab(tabId, message) {
   try {
     await chrome.tabs.sendMessage(tabId, message);
   } catch (error) {
-    // Content script可能未加载，忽略错误
+    // Content script可能未加载，对于重要消息尝试注入后重试
+    if (message.action === 'showPreview' || message.action === 'startSelection') {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          files: ['content.js']
+        });
+        await delay(100);
+        await chrome.tabs.sendMessage(tabId, message);
+      } catch (e) {
+        console.error('Failed to inject content script:', e);
+      }
+    }
   }
 }
 
@@ -549,7 +567,7 @@ chrome.commands.onCommand.addListener(async (command) => {
       return;
   }
 
-  // 如果截图成功，通知popup显示预览
+  // 如果截图成功，显示预览
   if (result.success) {
     // 存储截图结果供popup使用
     await chrome.storage.local.set({ 
@@ -558,6 +576,12 @@ chrome.commands.onCommand.addListener(async (command) => {
         dimensions: result.dimensions,
         timestamp: Date.now()
       }
+    });
+    // 在页面上显示预览浮层
+    await sendMessageToTab(tab.id, {
+      action: 'showPreview',
+      dataUrl: result.dataUrl,
+      dimensions: result.dimensions
     });
   }
 });
@@ -592,7 +616,13 @@ async function handleMessage(message, sender) {
     case 'captureFullPage': {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab) return { success: false, error: 'NO_ACTIVE_TAB' };
-      return await captureFullPage(tab.id, params.format, params.quality);
+      // 传递进度回调，向 popup 发送进度更新
+      const onProgress = (percent) => {
+        chrome.runtime.sendMessage({ action: 'progressUpdate', percent }).catch(() => {
+          // popup 可能已关闭，忽略错误
+        });
+      };
+      return await captureFullPage(tab.id, params.format, params.quality, onProgress);
     }
 
     case 'captureSelection': {

@@ -166,5 +166,17 @@
   "languageChanged": {
     "message": "语言已更改，重新打开扩展生效",
     "description": "Language changed notification"
+  },
+  "settingShortcuts": {
+    "message": "快捷键",
+    "description": "Shortcuts setting label"
+  },
+  "editShortcuts": {
+    "message": "修改快捷键",
+    "description": "Edit shortcuts link text"
+  },
+  "shortcutNotSet": {
+    "message": "未设置",
+    "description": "Shortcut not set text"
   }
 }

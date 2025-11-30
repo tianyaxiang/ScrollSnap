@@ -166,5 +166,17 @@
   "languageChanged": {
     "message": "Language changed, reopen extension to apply",
     "description": "Language changed notification"
+  },
+  "settingShortcuts": {
+    "message": "Shortcuts",
+    "description": "Shortcuts setting label"
+  },
+  "editShortcuts": {
+    "message": "Edit shortcuts",
+    "description": "Edit shortcuts link text"
+  },
+  "shortcutNotSet": {
+    "message": "Not set",
+    "description": "Shortcut not set text"
   }
 }
