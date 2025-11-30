@@ -1,11 +1,6 @@
 // User Settings Management Utilities
 
 /**
- * Supported languages
- */
-const SUPPORTED_LANGUAGES = ['zh_CN', 'en'];
-
-/**
  * Default user settings
  */
 const DEFAULT_SETTINGS = {
@@ -103,7 +98,6 @@ async function initializeSettings() {
 // Export for use in other scripts
 if (typeof window !== 'undefined') {
   window.settings = {
-    SUPPORTED_LANGUAGES,
     DEFAULT_SETTINGS,
     getSettings,
     getSetting,
