@@ -59,13 +59,26 @@
   let selectionBox = null;
   let selectionInfo = null;
   let selectionHint = null;
+  let selectionToolbar = null;
+  let selectionHandles = [];
   let isSelecting = false;
   let hasStartedSelection = false;
+  let isSelectionComplete = false; // 选区绘制完成，进入调整模式
+  let isDraggingSelection = false; // 是否正在拖拽移动选区
+  let isResizingSelection = false; // 是否正在调整选区大小
+  let resizeHandle = null; // 当前拖拽的控制点
+  let dragStartX = 0;
+  let dragStartY = 0;
   // 使用文档坐标（绝对坐标）来记录选区
   let startDocX = 0;
   let startDocY = 0;
   let currentDocX = 0;
   let currentDocY = 0;
+  // 选区的固定坐标（用于调整模式）
+  let selectionLeft = 0;
+  let selectionTop = 0;
+  let selectionWidth = 0;
+  let selectionHeight = 0;
   // 记录开始时的视口坐标
   let startViewportX = 0;
   let startViewportY = 0;
@@ -74,7 +87,7 @@
 
   // 选区容器（用于隔离样式）
   let selectionContainer = null;
-  
+
   // 标记当前选区是否在滚动容器内
   let isSelectingInContainer = false;
   // 缓存选区开始时的容器引用
@@ -111,7 +124,7 @@
       left: 0 !important;
       width: 100vw !important;
       height: 100vh !important;
-      background: rgba(0, 0, 0, 0.4) !important;
+      background: rgba(0, 0, 0, 0.5) !important;
       cursor: crosshair !important;
       z-index: 2147483646 !important;
       pointer-events: auto !important;
@@ -127,28 +140,28 @@
     selectionBox.style.cssText = `
       position: fixed !important;
       border: 2px solid #07C160 !important;
-      background: rgba(7, 193, 96, 0.1) !important;
-      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4) !important;
+      background: transparent !important;
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5) !important;
       display: none !important;
       z-index: 2147483647 !important;
       pointer-events: none !important;
       margin: 0 !important;
       padding: 0 !important;
       box-sizing: border-box !important;
-      border-radius: 2px !important;
+      border-radius: 0 !important;
     `;
 
-    // 创建尺寸信息显示（fixed定位，始终可见）
+    // 创建尺寸信息显示（显示在选区左上角内部）
     selectionInfo = document.createElement('div');
     selectionInfo.id = 'scroll-capture-info';
     selectionInfo.style.cssText = `
       position: fixed !important;
-      background: #07C160 !important;
+      background: rgba(0, 0, 0, 0.75) !important;
       color: white !important;
-      padding: 4px 10px !important;
-      border-radius: 4px !important;
-      font-size: 12px !important;
-      font-weight: 500 !important;
+      padding: 2px 6px !important;
+      border-radius: 2px !important;
+      font-size: 11px !important;
+      font-weight: 400 !important;
       font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif !important;
       display: none !important;
       z-index: 2147483647 !important;
@@ -166,11 +179,11 @@
       bottom: 20px !important;
       left: 50% !important;
       transform: translateX(-50%) !important;
-      background: rgba(25, 25, 25, 0.9) !important;
+      background: rgba(0, 0, 0, 0.75) !important;
       color: white !important;
-      padding: 10px 20px !important;
-      border-radius: 8px !important;
-      font-size: 14px !important;
+      padding: 8px 16px !important;
+      border-radius: 4px !important;
+      font-size: 13px !important;
       font-weight: 400 !important;
       font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif !important;
       z-index: 2147483647 !important;
@@ -181,7 +194,102 @@
       line-height: 1.4 !important;
       animation: fadeIn 0.2s ease !important;
     `;
-    selectionHint.textContent = chrome.i18n.getMessage('selectionHint') || 'Drag to select area, scroll to extend | ESC to cancel';
+    selectionHint.textContent = chrome.i18n.getMessage('selectionHint') || '拖动选择区域，滚动可扩展选区 | ESC 取消';
+
+    // 创建工具栏（选区完成后显示）
+    selectionToolbar = document.createElement('div');
+    selectionToolbar.id = 'scroll-capture-toolbar';
+    selectionToolbar.style.cssText = `
+      position: fixed !important;
+      display: none !important;
+      flex-direction: row !important;
+      align-items: center !important;
+      gap: 4px !important;
+      background: #fff !important;
+      border-radius: 4px !important;
+      padding: 4px !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+      z-index: 2147483648 !important;
+      pointer-events: auto !important;
+      margin: 0 !important;
+      box-sizing: border-box !important;
+    `;
+
+    // 工具栏按钮样式
+    const buttonStyle = `
+      width: 32px !important;
+      height: 32px !important;
+      border: none !important;
+      border-radius: 4px !important;
+      background: transparent !important;
+      cursor: pointer !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      transition: background 0.15s !important;
+    `;
+
+    // 取消按钮
+    const cancelBtn = document.createElement('button');
+    cancelBtn.id = 'scroll-capture-cancel';
+    cancelBtn.style.cssText = buttonStyle;
+    cancelBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>`;
+    cancelBtn.title = '取消 (ESC)';
+    cancelBtn.onmouseenter = () => cancelBtn.style.background = '#f5f5f5';
+    cancelBtn.onmouseleave = () => cancelBtn.style.background = 'transparent';
+    cancelBtn.onclick = (e) => {
+      e.stopPropagation();
+      removeSelectionOverlay();
+      chrome.runtime.sendMessage({ action: 'selectionCancelled' });
+    };
+
+    // 确认按钮
+    const confirmBtn = document.createElement('button');
+    confirmBtn.id = 'scroll-capture-confirm';
+    confirmBtn.style.cssText = buttonStyle + `background: #07C160 !important; border-radius: 4px !important;`;
+    confirmBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>`;
+    confirmBtn.title = '确认截图 (Enter)';
+    confirmBtn.onmouseenter = () => confirmBtn.style.background = '#06ae56';
+    confirmBtn.onmouseleave = () => confirmBtn.style.background = '#07C160';
+    confirmBtn.onclick = (e) => {
+      e.stopPropagation();
+      confirmSelection();
+    };
+
+    selectionToolbar.appendChild(cancelBtn);
+    selectionToolbar.appendChild(confirmBtn);
+
+    // 创建 8 个控制点
+    const handlePositions = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+    const cursors = {
+      'nw': 'nwse-resize', 'n': 'ns-resize', 'ne': 'nesw-resize', 'e': 'ew-resize',
+      'se': 'nwse-resize', 's': 'ns-resize', 'sw': 'nesw-resize', 'w': 'ew-resize'
+    };
+
+    selectionHandles = handlePositions.map(pos => {
+      const handle = document.createElement('div');
+      handle.className = 'scroll-capture-handle';
+      handle.dataset.position = pos;
+      handle.style.cssText = `
+        position: fixed !important;
+        width: 8px !important;
+        height: 8px !important;
+        background: #07C160 !important;
+        border: 1px solid #fff !important;
+        border-radius: 1px !important;
+        display: none !important;
+        z-index: 2147483648 !important;
+        pointer-events: auto !important;
+        cursor: ${cursors[pos]} !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-sizing: border-box !important;
+      `;
+      handle.onmousedown = (e) => onHandleMouseDown(e, pos);
+      return handle;
+    });
 
     // 添加动画样式
     const styleEl = document.createElement('style');
@@ -199,7 +307,9 @@
     selectionContainer.appendChild(selectionBox);
     selectionContainer.appendChild(selectionInfo);
     selectionContainer.appendChild(selectionHint);
-    
+    selectionContainer.appendChild(selectionToolbar);
+    selectionHandles.forEach(handle => selectionContainer.appendChild(handle));
+
     // 将容器添加到 body 末尾
     document.body.appendChild(selectionContainer);
 
@@ -227,26 +337,35 @@
       selectionOverlay.removeEventListener('mousedown', onMouseDown);
       selectionOverlay.removeEventListener('wheel', onWheel);
     }
+    if (selectionBox) {
+      selectionBox.removeEventListener('mousedown', onSelectionBoxMouseDown);
+    }
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
     document.removeEventListener('keydown', onKeyDown);
     document.removeEventListener('scroll', onScroll, true);
-    
+
     // 移除整个容器（包含所有子元素）
     if (selectionContainer) {
       selectionContainer.remove();
       selectionContainer = null;
     }
-    
+
     // 重置引用
     selectionOverlay = null;
     selectionBox = null;
     selectionInfo = null;
     selectionHint = null;
-    
+    selectionToolbar = null;
+    selectionHandles = [];
+
     // 重置状态
     isSelecting = false;
     hasStartedSelection = false;
+    isSelectionComplete = false;
+    isDraggingSelection = false;
+    isResizingSelection = false;
+    resizeHandle = null;
     scrollableContainer = null;
     isSelectingInContainer = false;
     activeContainer = null;
@@ -452,49 +571,84 @@
    * 鼠标按下事件处理
    */
   function onMouseDown(e) {
+    // 如果已经在调整模式，点击选区外部区域重新开始绘制
+    if (isSelectionComplete) {
+      // 检查是否点击在选区外
+      const clickX = e.clientX;
+      const clickY = e.clientY;
+      const inSelection = (
+        clickX >= selectionLeft &&
+        clickX <= selectionLeft + selectionWidth &&
+        clickY >= selectionTop &&
+        clickY <= selectionTop + selectionHeight
+      );
+
+      if (!inSelection) {
+        // 重置调整模式状态
+        isSelectionComplete = false;
+        isDraggingSelection = false;
+        isResizingSelection = false;
+        resizeHandle = null;
+
+        // 隐藏控制点和工具栏
+        selectionHandles.forEach(handle => {
+          handle.style.setProperty('display', 'none', 'important');
+        });
+        if (selectionToolbar) {
+          selectionToolbar.style.setProperty('display', 'none', 'important');
+        }
+
+        // 重置选区框样式
+        selectionBox.style.setProperty('pointer-events', 'none', 'important');
+        selectionBox.style.setProperty('cursor', 'crosshair', 'important');
+        selectionBox.removeEventListener('mousedown', onSelectionBoxMouseDown);
+
+        // 显示提示
+        if (selectionHint) {
+          selectionHint.style.setProperty('display', 'block', 'important');
+        }
+      } else {
+        // 点击在选区内，不做处理（由选区框的 mousedown 事件处理）
+        return;
+      }
+    }
+
     isSelecting = true;
     hasStartedSelection = true;
-    
+
     // 重置滚动容器检测，确保每次选区都重新检测
     scrollableContainer = null;
     isSelectingInContainer = false;
     activeContainer = null;
-    
+
     // 先检测容器并设置选区模式（必须在 clientToDocCoords 之前调用）
     checkAndSetContainerMode(e.clientX, e.clientY);
-    
+
     // 计算文档坐标（会根据 isSelectingInContainer 决定使用哪种坐标系）
     const docCoords = clientToDocCoords(e.clientX, e.clientY);
     startDocX = docCoords.x;
     startDocY = docCoords.y;
-    
+
     // 同时记录视口坐标，用于后续计算
     startViewportX = e.clientX;
     startViewportY = e.clientY;
-    
+
     currentDocX = startDocX;
     currentDocY = startDocY;
 
-    console.log('[ScrollCapture] onMouseDown:', {
-      clientX: e.clientX, clientY: e.clientY,
-      docX: startDocX, docY: startDocY,
-      isSelectingInContainer,
-      container: activeContainer ? 'found' : 'none'
-    });
-    
-    // 显示选区框和信息（使用 !important 确保样式生效）
+    // 显示选区框和信息
     if (selectionBox) {
-      selectionBox.style.cssText = selectionBox.style.cssText.replace('display: none', 'display: block');
+      selectionBox.style.setProperty('display', 'block', 'important');
     }
     if (selectionInfo) {
-      selectionInfo.style.cssText = selectionInfo.style.cssText.replace('display: none', 'display: block');
+      selectionInfo.style.setProperty('display', 'block', 'important');
     }
-    
+
     // 隐藏提示
     if (selectionHint) {
-      selectionHint.style.cssText = selectionHint.style.cssText.replace(/display:\s*[^;!]+/, 'display: none');
+      selectionHint.style.setProperty('display', 'none', 'important');
     }
-    
+
     updateSelectionBox();
     e.preventDefault();
   }
@@ -503,25 +657,41 @@
    * 鼠标移动事件处理
    */
   function onMouseMove(e) {
-    if (!isSelecting) return;
+    // 正在绘制选区
+    if (isSelecting && !isSelectionComplete) {
+      const docCoords = clientToDocCoords(e.clientX, e.clientY);
+      currentDocX = docCoords.x;
+      currentDocY = docCoords.y;
+      updateSelectionBox();
+      autoScrollAtEdge(e.clientX, e.clientY);
+      return;
+    }
 
-    // 更新当前文档坐标
-    const docCoords = clientToDocCoords(e.clientX, e.clientY);
-    currentDocX = docCoords.x;
-    currentDocY = docCoords.y;
+    // 正在拖拽移动选区
+    if (isDraggingSelection) {
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+      selectionLeft += dx;
+      selectionTop += dy;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      updateSelectionUI();
+      return;
+    }
 
-    updateSelectionBox();
-    
-    // 边缘自动滚动
-    autoScrollAtEdge(e.clientX, e.clientY);
+    // 正在调整选区大小
+    if (isResizingSelection && resizeHandle) {
+      handleResize(e.clientX, e.clientY);
+      return;
+    }
   }
 
   /**
-   * 更新选区框显示
+   * 更新选区框显示（绘制模式）
    */
   function updateSelectionBox() {
     if (!selectionBox || !selectionInfo) return;
-    
+
     // 选区的文档坐标
     const left = Math.min(startDocX, currentDocX);
     const top = Math.min(startDocY, currentDocY);
@@ -532,18 +702,9 @@
     const viewCoords = docToClientCoords(left, top);
     const viewLeft = viewCoords.x;
     const viewTop = viewCoords.y;
-    
-    // 选区框使用视口坐标（fixed定位）
-    // 需要处理选区可能部分在视口外的情况
-    const visibleLeft = Math.max(0, viewLeft);
-    const visibleTop = Math.max(0, viewTop);
-    const visibleRight = Math.min(window.innerWidth, viewLeft + width);
-    const visibleBottom = Math.min(window.innerHeight, viewTop + height);
-    const visibleWidth = Math.max(0, visibleRight - visibleLeft);
-    const visibleHeight = Math.max(0, visibleBottom - visibleTop);
-    
+
     // 如果选区完全在视口外，隐藏选区框
-    if (visibleWidth <= 0 || visibleHeight <= 0) {
+    if (width <= 0 || height <= 0) {
       selectionBox.style.setProperty('display', 'none', 'important');
     } else {
       selectionBox.style.setProperty('display', 'block', 'important');
@@ -553,32 +714,304 @@
       selectionBox.style.setProperty('height', height + 'px', 'important');
     }
 
-    // 更新尺寸信息（显示完整选区尺寸，不是可见部分）
+    // 更新尺寸信息（显示在选区左上角上方）
     selectionInfo.textContent = `${Math.round(width)} × ${Math.round(height)}`;
-    
-    // 计算信息框位置，确保在视口内
-    let infoLeft = viewLeft + width + 10;
-    let infoTop = viewTop;
-    
-    // 如果超出右边界，显示在左侧
-    if (infoLeft + 80 > window.innerWidth) {
-      infoLeft = viewLeft - 80;
+    let infoTop = viewTop - 22;
+    if (infoTop < 5) infoTop = viewTop + 5;
+    selectionInfo.style.setProperty('left', viewLeft + 'px', 'important');
+    selectionInfo.style.setProperty('top', infoTop + 'px', 'important');
+  }
+
+  /**
+   * 更新选区 UI（调整模式 - 使用视口坐标）
+   */
+  function updateSelectionUI() {
+    if (!selectionBox || !selectionInfo) return;
+
+    const viewLeft = selectionLeft;
+    const viewTop = selectionTop;
+    const width = selectionWidth;
+    const height = selectionHeight;
+
+    // 更新选区框
+    selectionBox.style.setProperty('display', 'block', 'important');
+    selectionBox.style.setProperty('left', viewLeft + 'px', 'important');
+    selectionBox.style.setProperty('top', viewTop + 'px', 'important');
+    selectionBox.style.setProperty('width', width + 'px', 'important');
+    selectionBox.style.setProperty('height', height + 'px', 'important');
+
+    // 更新尺寸信息
+    selectionInfo.textContent = `${Math.round(width)} × ${Math.round(height)}`;
+    let infoTop = viewTop - 22;
+    if (infoTop < 5) infoTop = viewTop + 5;
+    selectionInfo.style.setProperty('left', viewLeft + 'px', 'important');
+    selectionInfo.style.setProperty('top', infoTop + 'px', 'important');
+
+    // 更新控制点位置
+    updateHandles(viewLeft, viewTop, width, height);
+
+    // 更新工具栏位置
+    updateToolbar(viewLeft, viewTop, width, height);
+  }
+
+  /**
+   * 更新控制点位置
+   */
+  function updateHandles(left, top, width, height) {
+    const positions = {
+      'nw': { x: left - 4, y: top - 4 },
+      'n': { x: left + width / 2 - 4, y: top - 4 },
+      'ne': { x: left + width - 4, y: top - 4 },
+      'e': { x: left + width - 4, y: top + height / 2 - 4 },
+      'se': { x: left + width - 4, y: top + height - 4 },
+      's': { x: left + width / 2 - 4, y: top + height - 4 },
+      'sw': { x: left - 4, y: top + height - 4 },
+      'w': { x: left - 4, y: top + height / 2 - 4 }
+    };
+
+    selectionHandles.forEach(handle => {
+      const pos = handle.dataset.position;
+      const coords = positions[pos];
+      handle.style.setProperty('display', 'block', 'important');
+      handle.style.setProperty('left', coords.x + 'px', 'important');
+      handle.style.setProperty('top', coords.y + 'px', 'important');
+    });
+  }
+
+  /**
+   * 更新工具栏位置
+   */
+  function updateToolbar(left, top, width, height) {
+    if (!selectionToolbar) return;
+
+    const toolbarWidth = 76;
+    const toolbarHeight = 40;
+    const gap = 8;
+
+    // 默认显示在选区右下角下方
+    let toolbarLeft = left + width - toolbarWidth;
+    let toolbarTop = top + height + gap;
+
+    // 如果底部空间不足，尝试显示在选区内部底部
+    if (toolbarTop + toolbarHeight > window.innerHeight - 5) {
+      // 选区内部底部
+      toolbarTop = top + height - toolbarHeight - gap;
+
+      // 如果选区太小，工具栏会超出选区顶部，则显示在选区上方
+      if (toolbarTop < top + gap) {
+        toolbarTop = top - toolbarHeight - gap;
+
+        // 如果上方也没空间，强制显示在选区内部
+        if (toolbarTop < 5) {
+          toolbarTop = top + gap;
+        }
+      }
+    }
+
+    // 如果超出右边界
+    if (toolbarLeft + toolbarWidth > window.innerWidth - 5) {
+      toolbarLeft = window.innerWidth - toolbarWidth - 5;
     }
     // 如果超出左边界
-    if (infoLeft < 10) {
-      infoLeft = 10;
+    if (toolbarLeft < 5) {
+      toolbarLeft = 5;
     }
-    // 如果超出上边界
-    if (infoTop < 10) {
-      infoTop = 10;
+
+    selectionToolbar.style.setProperty('display', 'flex', 'important');
+    selectionToolbar.style.setProperty('left', toolbarLeft + 'px', 'important');
+    selectionToolbar.style.setProperty('top', toolbarTop + 'px', 'important');
+  }
+
+  /**
+   * 控制点鼠标按下事件
+   */
+  function onHandleMouseDown(e, position) {
+    e.preventDefault();
+    e.stopPropagation();
+    isResizingSelection = true;
+    resizeHandle = position;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+  }
+
+  /**
+   * 处理调整大小
+   */
+  function handleResize(clientX, clientY) {
+    const dx = clientX - dragStartX;
+    const dy = clientY - dragStartY;
+    dragStartX = clientX;
+    dragStartY = clientY;
+
+    const minSize = 20;
+
+    switch (resizeHandle) {
+      case 'nw':
+        if (selectionWidth - dx >= minSize) {
+          selectionLeft += dx;
+          selectionWidth -= dx;
+        }
+        if (selectionHeight - dy >= minSize) {
+          selectionTop += dy;
+          selectionHeight -= dy;
+        }
+        break;
+      case 'n':
+        if (selectionHeight - dy >= minSize) {
+          selectionTop += dy;
+          selectionHeight -= dy;
+        }
+        break;
+      case 'ne':
+        if (selectionWidth + dx >= minSize) {
+          selectionWidth += dx;
+        }
+        if (selectionHeight - dy >= minSize) {
+          selectionTop += dy;
+          selectionHeight -= dy;
+        }
+        break;
+      case 'e':
+        if (selectionWidth + dx >= minSize) {
+          selectionWidth += dx;
+        }
+        break;
+      case 'se':
+        if (selectionWidth + dx >= minSize) {
+          selectionWidth += dx;
+        }
+        if (selectionHeight + dy >= minSize) {
+          selectionHeight += dy;
+        }
+        break;
+      case 's':
+        if (selectionHeight + dy >= minSize) {
+          selectionHeight += dy;
+        }
+        break;
+      case 'sw':
+        if (selectionWidth - dx >= minSize) {
+          selectionLeft += dx;
+          selectionWidth -= dx;
+        }
+        if (selectionHeight + dy >= minSize) {
+          selectionHeight += dy;
+        }
+        break;
+      case 'w':
+        if (selectionWidth - dx >= minSize) {
+          selectionLeft += dx;
+          selectionWidth -= dx;
+        }
+        break;
     }
-    // 如果超出下边界
-    if (infoTop > window.innerHeight - 30) {
-      infoTop = window.innerHeight - 30;
+
+    updateSelectionUI();
+  }
+
+  /**
+   * 选区框鼠标按下事件（拖拽移动）
+   */
+  function onSelectionBoxMouseDown(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    isDraggingSelection = true;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    selectionBox.style.setProperty('cursor', 'move', 'important');
+  }
+
+  /**
+   * 进入选区调整模式
+   */
+  function enterAdjustMode() {
+    isSelectionComplete = true;
+
+    // 保存选区的视口坐标
+    const left = Math.min(startDocX, currentDocX);
+    const top = Math.min(startDocY, currentDocY);
+    const width = Math.abs(currentDocX - startDocX);
+    const height = Math.abs(currentDocY - startDocY);
+
+    const viewCoords = docToClientCoords(left, top);
+    selectionLeft = viewCoords.x;
+    selectionTop = viewCoords.y;
+    selectionWidth = width;
+    selectionHeight = height;
+
+    // 隐藏提示
+    if (selectionHint) {
+      selectionHint.style.setProperty('display', 'none', 'important');
     }
-    
-    selectionInfo.style.setProperty('left', infoLeft + 'px', 'important');
-    selectionInfo.style.setProperty('top', infoTop + 'px', 'important');
+
+    // 选区框可以接受鼠标事件（用于拖拽）
+    selectionBox.style.setProperty('pointer-events', 'auto', 'important');
+    selectionBox.style.setProperty('cursor', 'move', 'important');
+    selectionBox.addEventListener('mousedown', onSelectionBoxMouseDown);
+
+    // 显示控制点和工具栏
+    updateSelectionUI();
+  }
+
+  /**
+   * 确认选区并截图
+   */
+  function confirmSelection() {
+    // 停止自动滚动
+    if (autoScrollInterval) {
+      clearInterval(autoScrollInterval);
+      autoScrollInterval = null;
+    }
+
+    // 将视口坐标转换回文档坐标
+    const docCoords = clientToDocCoords(selectionLeft, selectionTop);
+    const rect = {
+      x: docCoords.x,
+      y: docCoords.y,
+      width: selectionWidth,
+      height: selectionHeight
+    };
+
+    // 如果选区太小，忽略
+    if (rect.width < 10 || rect.height < 10) {
+      removeSelectionOverlay();
+      return;
+    }
+
+    // 获取滚动容器信息
+    const container = isSelectingInContainer ? activeContainer : null;
+    const currentScroll = getCurrentScroll();
+    let containerInfo = null;
+
+    if (container) {
+      const containerRect = container.getBoundingClientRect();
+      containerInfo = {
+        scrollTop: container.scrollTop,
+        scrollLeft: container.scrollLeft,
+        scrollHeight: container.scrollHeight,
+        scrollWidth: container.scrollWidth,
+        clientHeight: container.clientHeight,
+        clientWidth: container.clientWidth,
+        viewportTop: containerRect.top,
+        viewportLeft: containerRect.left,
+        viewportWidth: containerRect.width,
+        viewportHeight: containerRect.height
+      };
+    }
+
+    // 发送选区信息到 background
+    chrome.runtime.sendMessage({
+      action: 'scrollSelectionComplete',
+      rect: rect,
+      viewportHeight: window.innerHeight,
+      viewportWidth: window.innerWidth,
+      scrollHeight: container ? container.scrollHeight : Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
+      devicePixelRatio: window.devicePixelRatio || 1,
+      containerInfo: containerInfo,
+      currentScroll: currentScroll
+    });
+
+    removeSelectionOverlay();
   }
 
   /**
@@ -622,76 +1055,45 @@
    * 鼠标释放事件处理
    */
   function onMouseUp() {
-    if (!isSelecting) return;
-    isSelecting = false;
-    
-    // 停止自动滚动
-    if (autoScrollInterval) {
-      clearInterval(autoScrollInterval);
-      autoScrollInterval = null;
-    }
-
-    const rect = getSelectionRect();
-    
-    // 如果选区太小，忽略
-    if (rect.width < 10 || rect.height < 10) {
-      removeSelectionOverlay();
+    // 停止拖拽移动
+    if (isDraggingSelection) {
+      isDraggingSelection = false;
+      selectionBox.style.setProperty('cursor', 'move', 'important');
       return;
     }
 
-    // 获取滚动容器信息（使用选区开始时确定的容器）
-    const container = isSelectingInContainer ? activeContainer : null;
-    const currentScroll = getCurrentScroll();
-    let containerInfo = null;
-    
-    if (container) {
-      const containerRect = container.getBoundingClientRect();
-      containerInfo = {
-        scrollTop: container.scrollTop,
-        scrollLeft: container.scrollLeft,
-        scrollHeight: container.scrollHeight,
-        scrollWidth: container.scrollWidth,
-        clientHeight: container.clientHeight,
-        clientWidth: container.clientWidth,
-        // 容器在视口中的位置
-        viewportTop: containerRect.top,
-        viewportLeft: containerRect.left,
-        viewportWidth: containerRect.width,
-        viewportHeight: containerRect.height
-      };
+    // 停止调整大小
+    if (isResizingSelection) {
+      isResizingSelection = false;
+      resizeHandle = null;
+      return;
     }
 
-    console.log('[ScrollCapture] onMouseUp:', {
-      rect,
-      currentScroll,
-      isSelectingInContainer,
-      containerInfo: containerInfo ? {
-        viewportTop: containerInfo.viewportTop,
-        viewportLeft: containerInfo.viewportLeft,
-        scrollTop: containerInfo.scrollTop,
-        scrollLeft: containerInfo.scrollLeft
-      } : null
-    });
+    // 完成绘制选区
+    if (isSelecting && !isSelectionComplete) {
+      isSelecting = false;
 
-    // 发送选区信息到 background
-    // rect 使用的是文档坐标（相对于滚动内容的坐标）
-    // 同时传递当前滚动位置，以便 background 正确计算
-    chrome.runtime.sendMessage({
-      action: 'scrollSelectionComplete',
-      rect: rect,
-      viewportHeight: window.innerHeight,
-      viewportWidth: window.innerWidth,
-      scrollHeight: container ? container.scrollHeight : Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
-      devicePixelRatio: window.devicePixelRatio || 1,
-      containerInfo: containerInfo,
-      currentScroll: currentScroll
-    });
+      // 停止自动滚动
+      if (autoScrollInterval) {
+        clearInterval(autoScrollInterval);
+        autoScrollInterval = null;
+      }
 
-    removeSelectionOverlay();
+      const rect = getSelectionRect();
+
+      // 如果选区太小，忽略
+      if (rect.width < 10 || rect.height < 10) {
+        removeSelectionOverlay();
+        return;
+      }
+
+      // 进入调整模式
+      enterAdjustMode();
+    }
   }
 
   /**
-   * 键盘事件处理 - Escape 取消
+   * 键盘事件处理 - Escape 取消, Enter 确认
    */
   function onKeyDown(e) {
     if (e.key === 'Escape') {
@@ -702,6 +1104,9 @@
       }
       removeSelectionOverlay();
       chrome.runtime.sendMessage({ action: 'selectionCancelled' });
+    } else if (e.key === 'Enter' && isSelectionComplete) {
+      e.preventDefault();
+      confirmSelection();
     }
   }
 

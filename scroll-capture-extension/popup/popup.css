@@ -521,96 +521,111 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: var(--wechat-white);
+  background: linear-gradient(135deg, #07C160 0%, #06AD56 100%);
   z-index: 300;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   animation: fadeIn 0.3s ease;
+  overflow-y: auto;
 }
 
 .guide-content {
-  padding: 24px;
+  padding: 20px 20px 24px;
   text-align: center;
-  max-width: 280px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .guide-header {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .guide-icon {
   font-size: 36px;
   display: block;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .guide-title {
   font-size: 18px;
-  font-weight: 500;
-  color: var(--text-primary);
+  font-weight: 600;
+  color: var(--text-white);
   margin: 0;
 }
 
 .guide-features {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 8px;
+  margin-bottom: 12px;
   text-align: left;
 }
 
 .guide-feature {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: var(--wechat-bg);
-  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
 }
 
 .feature-icon {
   font-size: 20px;
   flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--wechat-green-light);
+  border-radius: var(--radius-sm);
 }
 
 .feature-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .feature-text strong {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text-primary);
 }
 
 .feature-text span {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
 }
 
 .guide-shortcuts {
-  background: var(--wechat-bg);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: var(--radius);
-  padding: 12px 14px;
-  margin-bottom: 20px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
   text-align: left;
+  border: 1px solid rgba(255,255,255,0.2);
 }
 
 .shortcuts-title {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin: 0 0 10px 0;
+  font-size: 10px;
+  color: rgba(255,255,255,0.8);
+  margin: 0 0 8px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 500;
 }
 
 .shortcut-item {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   margin-bottom: 6px;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .shortcut-item:last-child {
@@ -618,19 +633,42 @@ body {
 }
 
 .shortcut-item kbd {
-  background: var(--wechat-white);
-  border: 1px solid var(--wechat-border);
+  background: rgba(255,255,255,0.95);
+  border: none;
   border-radius: var(--radius-sm);
   padding: 3px 8px;
   font-family: 'SF Mono', Monaco, monospace;
-  font-size: 11px;
-  color: var(--text-primary);
-  min-width: 90px;
-  text-align: center;
+  font-size: 10px;
+  color: var(--wechat-green);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 
 .shortcut-item span {
-  color: var(--text-secondary);
+  color: rgba(255,255,255,0.9);
+  font-weight: 400;
+}
+
+.guide-close-btn {
+  width: 100%;
+  padding: 12px 20px;
+  background: var(--text-white);
+  color: var(--wechat-green);
+  border: none;
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.guide-close-btn:hover {
+  background: #f8f8f8;
+}
+
+.guide-close-btn:active {
+  background: #f0f0f0;
 }
 
 /* Settings Shortcuts List */
