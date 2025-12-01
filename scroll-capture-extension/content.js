@@ -111,7 +111,7 @@
       left: 0 !important;
       width: 100vw !important;
       height: 100vh !important;
-      background: rgba(0, 0, 0, 0.3) !important;
+      background: rgba(0, 0, 0, 0.4) !important;
       cursor: crosshair !important;
       z-index: 2147483646 !important;
       pointer-events: auto !important;
@@ -126,14 +126,16 @@
     selectionBox.id = 'scroll-capture-selection';
     selectionBox.style.cssText = `
       position: fixed !important;
-      border: 2px dashed #4a90d9 !important;
-      background: rgba(74, 144, 217, 0.1) !important;
+      border: 2px solid #07C160 !important;
+      background: rgba(7, 193, 96, 0.1) !important;
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4) !important;
       display: none !important;
       z-index: 2147483647 !important;
       pointer-events: none !important;
       margin: 0 !important;
       padding: 0 !important;
       box-sizing: border-box !important;
+      border-radius: 2px !important;
     `;
 
     // 创建尺寸信息显示（fixed定位，始终可见）
@@ -141,12 +143,13 @@
     selectionInfo.id = 'scroll-capture-info';
     selectionInfo.style.cssText = `
       position: fixed !important;
-      background: #4a90d9 !important;
+      background: #07C160 !important;
       color: white !important;
-      padding: 4px 8px !important;
+      padding: 4px 10px !important;
       border-radius: 4px !important;
       font-size: 12px !important;
-      font-family: Arial, sans-serif !important;
+      font-weight: 500 !important;
+      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif !important;
       display: none !important;
       z-index: 2147483647 !important;
       pointer-events: none !important;
@@ -163,20 +166,33 @@
       bottom: 20px !important;
       left: 50% !important;
       transform: translateX(-50%) !important;
-      background: rgba(0, 0, 0, 0.8) !important;
+      background: rgba(25, 25, 25, 0.9) !important;
       color: white !important;
       padding: 10px 20px !important;
       border-radius: 8px !important;
       font-size: 14px !important;
-      font-family: Arial, sans-serif !important;
+      font-weight: 400 !important;
+      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif !important;
       z-index: 2147483647 !important;
       pointer-events: none !important;
       white-space: nowrap !important;
       margin: 0 !important;
       box-sizing: border-box !important;
       line-height: 1.4 !important;
+      animation: fadeIn 0.2s ease !important;
     `;
     selectionHint.textContent = chrome.i18n.getMessage('selectionHint') || 'Drag to select area, scroll to extend | ESC to cancel';
+
+    // 添加动画样式
+    const styleEl = document.createElement('style');
+    styleEl.id = 'scroll-capture-styles';
+    styleEl.textContent = `
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+    `;
+    selectionContainer.appendChild(styleEl);
 
     // 将所有元素添加到隔离容器中
     selectionContainer.appendChild(selectionOverlay);
@@ -725,24 +741,30 @@
         position: fixed;
         top: 20px;
         right: 20px;
-        background: rgba(0, 0, 0, 0.8);
-        color: white;
-        padding: 12px 20px;
+        background: white;
+        color: #191919;
+        padding: 14px 20px;
         border-radius: 8px;
-        font-family: Arial, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
         font-size: 14px;
         z-index: 2147483647;
         display: flex;
         align-items: center;
-        gap: 12px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        gap: 14px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+        animation: fadeIn 0.2s ease;
       `;
 
-      progressContainer.innerHTML = `
-        <div style="width: 150px; height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px; overflow: hidden;">
-          <div id="scroll-capture-progress-bar" style="width: 0%; height: 100%; background: #4a90d9; transition: width 0.2s;"></div>
+      const styleTag = document.createElement('style');
+      styleTag.textContent = `@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }`;
+      progressContainer.appendChild(styleTag);
+
+      progressContainer.innerHTML += `
+        <span style="color: #888888;">截图中</span>
+        <div style="width: 140px; height: 4px; background: #E5E5E5; border-radius: 2px; overflow: hidden;">
+          <div id="scroll-capture-progress-bar" style="width: 0%; height: 100%; background: #07C160; border-radius: 2px; transition: width 0.3s ease;"></div>
         </div>
-        <span id="scroll-capture-progress-text">0%</span>
+        <span id="scroll-capture-progress-text" style="font-weight: 500; min-width: 36px; text-align: right; color: #191919;">0%</span>
       `;
 
       document.body.appendChild(progressContainer);
@@ -750,7 +772,7 @@
 
     const progressBar = document.getElementById('scroll-capture-progress-bar');
     const progressText = document.getElementById('scroll-capture-progress-text');
-    
+
     if (progressBar) progressBar.style.width = percent + '%';
     if (progressText) progressText.textContent = Math.round(percent) + '%';
   }
@@ -853,29 +875,43 @@
       left: 50%;
       transform: translate(-50%, -50%);
       background: white;
-      border-radius: 12px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
       z-index: 2147483647;
       max-width: 90vw;
       max-height: 90vh;
       display: flex;
       flex-direction: column;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      animation: fadeIn 0.2s ease;
+      overflow: hidden;
     `;
 
     const dimText = dimensions ? `${dimensions.width} × ${dimensions.height}` : '';
-    
+
     previewPanel.innerHTML = `
-      <div style="padding: 12px 16px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-size: 14px; color: #666;">${dimText}</span>
-        <button id="scroll-capture-close" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #999; padding: 0 4px;">×</button>
+      <style>
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+      </style>
+      <div style="padding: 14px 16px; border-bottom: 1px solid #EBEBEB; display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 15px; font-weight: 500; color: #191919;">截图完成</span>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 12px; color: #888888;">${dimText}</span>
+          <button id="scroll-capture-close" style="background: transparent; border: none; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; color: #888888; font-size: 18px; display: flex; align-items: center; justify-content: center;">×</button>
+        </div>
       </div>
-      <div style="padding: 16px; overflow: auto; max-height: calc(90vh - 120px);">
+      <div style="padding: 16px; overflow: auto; max-height: calc(90vh - 120px); background: #F5F5F5;">
         <img src="${dataUrl}" style="max-width: 100%; display: block; border-radius: 4px;" />
       </div>
-      <div style="padding: 12px 16px; border-top: 1px solid #eee; display: flex; gap: 8px; justify-content: flex-end;">
-        <button id="scroll-capture-copy" style="padding: 8px 16px; background: #4a90d9; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">复制</button>
-        <button id="scroll-capture-save" style="padding: 8px 16px; background: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">保存</button>
+      <div style="padding: 12px 16px; border-top: 1px solid #EBEBEB; display: flex; gap: 10px; justify-content: flex-end;">
+        <button id="scroll-capture-copy" style="padding: 8px 16px; background: white; color: #191919; border: 1px solid #E5E5E5; border-radius: 4px; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 6px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+          复制
+        </button>
+        <button id="scroll-capture-save" style="padding: 8px 16px; background: #07C160; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 6px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          保存
+        </button>
       </div>
     `;
 
@@ -890,7 +926,12 @@
       height: 100%;
       background: rgba(0, 0, 0, 0.5);
       z-index: 2147483646;
+      animation: fadeIn 0.2s ease;
     `;
+
+    const styleEl = document.createElement('style');
+    styleEl.textContent = `@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }`;
+    backdrop.appendChild(styleEl);
     backdrop.addEventListener('click', removePreviewPanel);
 
     document.body.appendChild(backdrop);
@@ -981,17 +1022,25 @@
       bottom: 20px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.8);
+      background: rgba(25, 25, 25, 0.9);
       color: white;
       padding: 10px 20px;
-      border-radius: 6px;
+      border-radius: 8px;
       font-size: 14px;
       z-index: 2147483647;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      animation: fadeIn 0.2s ease;
     `;
-    toast.textContent = message;
+    toast.innerHTML = `
+      ${message}
+      <style>@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }</style>
+    `;
     document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 2000);
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transition = 'opacity 0.2s';
+      setTimeout(() => toast.remove(), 200);
+    }, 2000);
   }
 
   // ============================================
@@ -1015,33 +1064,34 @@
         top: 20px;
         right: 20px;
         background: white;
-        border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
         z-index: 2147483647;
         padding: 16px 20px;
-        min-width: 280px;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        min-width: 260px;
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        animation: fadeIn 0.2s ease;
       `;
+
+      const styleTag = document.createElement('style');
+      styleTag.textContent = `@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }`;
+      batchProgressPanel.appendChild(styleTag);
       document.body.appendChild(batchProgressPanel);
     }
 
     const percent = Math.round((current / total) * 100);
     const statusText = status === 'capturing' ? '正在截图...' : '处理中...';
-    
+
     batchProgressPanel.innerHTML = `
-      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-        <div style="width: 24px; height: 24px; border: 3px solid #e0e0e0; border-top-color: #1a73e8; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-        <span style="font-size: 14px; font-weight: 500; color: #333;">${statusText}</span>
+      <style>@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }</style>
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+        <span style="font-size: 14px; color: #191919; font-weight: 500;">${statusText}</span>
+        <span style="font-size: 12px; color: #888888;">${current} / ${total}</span>
       </div>
-      <div style="background: #e0e0e0; border-radius: 4px; height: 8px; overflow: hidden; margin-bottom: 8px;">
-        <div style="background: #1a73e8; height: 100%; width: ${percent}%; transition: width 0.3s;"></div>
+      <div style="background: #E5E5E5; border-radius: 2px; height: 4px; overflow: hidden; margin-bottom: 8px;">
+        <div style="background: #07C160; height: 100%; width: ${percent}%; transition: width 0.3s;"></div>
       </div>
-      <div style="font-size: 13px; color: #666; text-align: center;">${current} / ${total}</div>
-      <style>
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      </style>
+      <div style="text-align: center; font-size: 13px; color: #888888;">${percent}%</div>
     `;
   }
 
@@ -1061,10 +1111,10 @@
   function showBatchResultsPanel(results, format) {
     hideBatchProgressPanel();
     removeBatchResultsPanel();
-    
+
     batchResultsData = results;
     batchFormat = format || 'png';
-    
+
     const successCount = results.filter(r => r.success).length;
     const failCount = results.length - successCount;
 
@@ -1079,7 +1129,12 @@
       height: 100%;
       background: rgba(0, 0, 0, 0.5);
       z-index: 2147483646;
+      animation: fadeIn 0.2s ease;
     `;
+
+    const styleEl = document.createElement('style');
+    styleEl.textContent = `@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }`;
+    backdrop.appendChild(styleEl);
     backdrop.addEventListener('click', removeBatchResultsPanel);
     document.body.appendChild(backdrop);
 
@@ -1092,15 +1147,17 @@
       left: 50%;
       transform: translate(-50%, -50%);
       background: white;
-      border-radius: 12px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
       z-index: 2147483647;
-      width: 600px;
+      width: 560px;
       max-width: 90vw;
       max-height: 80vh;
       display: flex;
       flex-direction: column;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      animation: fadeIn 0.2s ease;
+      overflow: hidden;
     `;
 
     // 生成缩略图列表
@@ -1110,59 +1167,70 @@
         thumbnailsHtml += `
           <div class="batch-thumb" data-index="${index}" style="
             width: 120px;
-            height: 90px;
-            border-radius: 6px;
+            height: 80px;
+            border-radius: 4px;
             overflow: hidden;
             cursor: pointer;
             border: 2px solid transparent;
-            transition: border-color 0.2s;
+            transition: all 0.2s;
             flex-shrink: 0;
+            position: relative;
           ">
             <img src="${result.dataUrl}" style="width: 100%; height: 100%; object-fit: cover;" />
+            <div style="position: absolute; bottom: 0; left: 0; right: 0; padding: 4px 6px; background: linear-gradient(transparent, rgba(0,0,0,0.6)); color: white; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${result.title ? result.title.substring(0, 15) : ''}</div>
           </div>
         `;
       } else {
         thumbnailsHtml += `
           <div style="
             width: 120px;
-            height: 90px;
-            border-radius: 6px;
-            background: #f5f5f5;
+            height: 80px;
+            border-radius: 4px;
+            background: #FEF0F0;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: #999;
+            color: #FA5151;
             font-size: 12px;
             flex-shrink: 0;
-          ">失败</div>
+          ">截图失败</div>
         `;
       }
     });
 
     batchResultsPanel.innerHTML = `
-      <div style="padding: 16px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+      <style>
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .batch-thumb:hover { border-color: #07C160 !important; }
+      </style>
+      <div style="padding: 16px 20px; border-bottom: 1px solid #EBEBEB; display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <span style="font-size: 16px; font-weight: 600; color: #333;">批量截图完成</span>
-          <span style="font-size: 13px; color: #666; margin-left: 12px;">成功 ${successCount} 个${failCount > 0 ? `，失败 ${failCount} 个` : ''}</span>
+          <span style="font-size: 16px; font-weight: 500; color: #191919;">批量截图完成</span>
+          <span style="font-size: 13px; color: #888888; margin-left: 12px;">成功 ${successCount} 个${failCount > 0 ? `，失败 ${failCount} 个` : ''}</span>
         </div>
-        <button id="batch-close-btn" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #999; padding: 0 4px; line-height: 1;">×</button>
+        <button id="batch-close-btn" style="background: transparent; border: none; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; color: #888888; font-size: 20px; display: flex; align-items: center; justify-content: center;">×</button>
       </div>
-      <div style="padding: 16px 20px; overflow-x: auto; border-bottom: 1px solid #eee;">
+      <div style="padding: 16px 20px; overflow-x: auto; border-bottom: 1px solid #EBEBEB; background: #F5F5F5;">
         <div style="display: flex; gap: 12px; min-width: max-content;">
           ${thumbnailsHtml}
         </div>
       </div>
-      <div style="padding: 16px 20px; display: flex; gap: 12px; justify-content: flex-end;">
+      <div style="padding: 14px 20px; display: flex; gap: 10px; justify-content: flex-end;">
         <button id="batch-download-all-btn" style="
-          padding: 10px 20px;
-          background: #1a73e8;
+          padding: 8px 20px;
+          background: #07C160;
           color: white;
           border: none;
-          border-radius: 6px;
+          border-radius: 4px;
           cursor: pointer;
           font-size: 14px;
-          font-weight: 500;
-        ">批量下载 (${successCount})</button>
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        ">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          批量下载 (${successCount})
+        </button>
       </div>
     `;
 
@@ -1171,7 +1239,7 @@
     // 绑定事件
     document.getElementById('batch-close-btn').addEventListener('click', removeBatchResultsPanel);
     document.getElementById('batch-download-all-btn').addEventListener('click', downloadAllBatchResults);
-    
+
     // 缩略图点击预览
     batchResultsPanel.querySelectorAll('.batch-thumb').forEach(thumb => {
       thumb.addEventListener('click', () => {
@@ -1180,12 +1248,6 @@
         if (result && result.success && result.dataUrl) {
           showSinglePreview(result.dataUrl, result.dimensions, result.title);
         }
-      });
-      thumb.addEventListener('mouseenter', () => {
-        thumb.style.borderColor = '#1a73e8';
-      });
-      thumb.addEventListener('mouseleave', () => {
-        thumb.style.borderColor = 'transparent';
       });
     });
 
@@ -1223,7 +1285,7 @@
     if (batchResultsPanel) {
       batchResultsPanel.style.display = 'none';
     }
-    
+
     const singlePreview = document.createElement('div');
     singlePreview.id = 'scroll-capture-single-preview';
     singlePreview.style.cssText = `
@@ -1232,28 +1294,31 @@
       left: 50%;
       transform: translate(-50%, -50%);
       background: white;
-      border-radius: 12px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
       z-index: 2147483648;
       max-width: 90vw;
       max-height: 90vh;
       display: flex;
       flex-direction: column;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      overflow: hidden;
+      animation: fadeIn 0.2s ease;
     `;
 
     const dimText = dimensions ? `${dimensions.width} × ${dimensions.height}` : '';
-    const titleText = title ? title.substring(0, 50) : '';
-    
+    const titleText = title ? (title.length > 40 ? title.substring(0, 40) + '...' : title) : '';
+
     singlePreview.innerHTML = `
-      <div style="padding: 12px 16px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+      <style>@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }</style>
+      <div style="padding: 14px 16px; border-bottom: 1px solid #EBEBEB; display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <span style="font-size: 14px; color: #333; font-weight: 500;">${titleText}</span>
-          <span style="font-size: 12px; color: #999; margin-left: 8px;">${dimText}</span>
+          <span style="font-size: 14px; color: #191919; font-weight: 500;">${titleText}</span>
+          <span style="font-size: 12px; color: #888888; margin-left: 10px;">${dimText}</span>
         </div>
-        <button id="single-preview-close" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #999; padding: 0 4px;">×</button>
+        <button id="single-preview-close" style="background: transparent; border: none; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; color: #888888; font-size: 18px; display: flex; align-items: center; justify-content: center;">×</button>
       </div>
-      <div style="padding: 16px; overflow: auto; max-height: calc(90vh - 60px);">
+      <div style="padding: 16px; overflow: auto; max-height: calc(90vh - 60px); background: #F5F5F5;">
         <img src="${dataUrl}" style="max-width: 100%; display: block; border-radius: 4px;" />
       </div>
     `;
