@@ -87,12 +87,13 @@ async function getImageDimensions(dataUrl) {
  * @param {string} format - 图片格式
  * @param {number} quality - JPEG质量
  * @param {function} onProgress - 进度回调
+ * @param {boolean} showPageProgress - 是否在页面上显示进度条（从popup调用时为false）
  * @returns {Promise<{success: boolean, dataUrl?: string, error?: string}>}
  */
-async function captureFullPage(tabId, format = 'png', quality = 92, onProgress = null) {
+async function captureFullPage(tabId, format = 'png', quality = 92, onProgress = null, showPageProgress = true) {
   try {
     const tab = await chrome.tabs.get(tabId);
-    
+
     if (isRestrictedPage(tab.url)) {
       return { success: false, error: 'RESTRICTED_PAGE' };
     }
@@ -105,34 +106,40 @@ async function captureFullPage(tabId, format = 'png', quality = 92, onProgress =
 
     const { scrollHeight, viewportHeight, viewportWidth, devicePixelRatio } = scrollInfo;
     const dpr = devicePixelRatio || 1;
-    
+
     // 保存原始滚动位置
     const originalScrollY = scrollInfo.currentScrollY;
 
-    // 显示进度指示器
-    await sendMessageToTab(tabId, { action: 'showProgress', percent: 0 });
+    // 显示进度指示器（仅当 showPageProgress 为 true 时）
+    if (showPageProgress) {
+      await sendMessageToTab(tabId, { action: 'showProgress', percent: 0 });
+    }
 
     // 先滚动到顶部并捕获第一张，获取实际图片尺寸
     await scrollToPosition(tabId, 0);
     await delay(300);
-    
+
     const captureOptions = { format: format === 'jpeg' ? 'jpeg' : 'png' };
     if (format === 'jpeg') captureOptions.quality = quality;
-    
+
     // 截图前隐藏进度条，截图后恢复
-    await sendMessageToTab(tabId, { action: 'hideProgress' });
+    if (showPageProgress) {
+      await sendMessageToTab(tabId, { action: 'hideProgress' });
+    }
     const firstDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, captureOptions);
-    await sendMessageToTab(tabId, { action: 'showProgress', percent: 0 });
+    if (showPageProgress) {
+      await sendMessageToTab(tabId, { action: 'showProgress', percent: 0 });
+    }
     const firstImgDimensions = await getImageDimensions(firstDataUrl);
-    
+
     // 实际截图的尺寸（考虑 DPI）
     const captureWidth = firstImgDimensions.width;
     const captureViewportHeight = firstImgDimensions.height;
-    
+
     // 计算总高度（按实际像素）
     const totalHeight = Math.ceil(scrollHeight * dpr);
     const totalScrolls = Math.ceil(scrollHeight / viewportHeight);
-    
+
     const screenshots = [{
       dataUrl: firstDataUrl,
       y: 0,
@@ -143,7 +150,9 @@ async function captureFullPage(tabId, format = 'png', quality = 92, onProgress =
     // 更新进度
     const progress = Math.round((1 / totalScrolls) * 100);
     if (onProgress) onProgress(progress);
-    await sendMessageToTab(tabId, { action: 'updateProgress', percent: progress });
+    if (showPageProgress) {
+      await sendMessageToTab(tabId, { action: 'updateProgress', percent: progress });
+    }
 
     // 如果需要多次截图，隐藏 fixed/sticky 元素（第一屏已经截取，后续屏幕隐藏这些元素避免重复）
     if (totalScrolls > 1) {
@@ -154,18 +163,22 @@ async function captureFullPage(tabId, format = 'png', quality = 92, onProgress =
     for (let i = 1; i < totalScrolls; i++) {
       const scrollY = i * viewportHeight;
       const isLastScroll = i === totalScrolls - 1;
-      
+
       // 滚动到指定位置
       await scrollToPosition(tabId, scrollY);
-      
+
       // 等待页面渲染，并确保不超过 captureVisibleTab 的调用频率限制（每秒最多2次）
       await delay(550);
-      
+
       // 截图前隐藏进度条，截图后恢复
-      await sendMessageToTab(tabId, { action: 'hideProgress' });
+      if (showPageProgress) {
+        await sendMessageToTab(tabId, { action: 'hideProgress' });
+      }
       const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, captureOptions);
-      await sendMessageToTab(tabId, { action: 'showProgress', percent: Math.round((i / totalScrolls) * 100) });
-      
+      if (showPageProgress) {
+        await sendMessageToTab(tabId, { action: 'showProgress', percent: Math.round((i / totalScrolls) * 100) });
+      }
+
       // 计算实际捕获高度（按实际像素）
       let captureHeight = captureViewportHeight;
       if (isLastScroll) {
@@ -173,7 +186,7 @@ async function captureFullPage(tabId, format = 'png', quality = 92, onProgress =
         captureHeight = totalHeight - (i * captureViewportHeight);
         if (captureHeight <= 0) captureHeight = captureViewportHeight;
       }
-      
+
       screenshots.push({
         dataUrl,
         y: i * captureViewportHeight,
@@ -184,7 +197,9 @@ async function captureFullPage(tabId, format = 'png', quality = 92, onProgress =
       // 更新进度
       const prog = Math.round(((i + 1) / totalScrolls) * 100);
       if (onProgress) onProgress(prog);
-      await sendMessageToTab(tabId, { action: 'updateProgress', percent: prog });
+      if (showPageProgress) {
+        await sendMessageToTab(tabId, { action: 'updateProgress', percent: prog });
+      }
     }
 
     // 恢复 fixed/sticky 元素的可见性
@@ -194,9 +209,11 @@ async function captureFullPage(tabId, format = 'png', quality = 92, onProgress =
 
     // 恢复原始滚动位置
     await scrollToPosition(tabId, originalScrollY);
-    
+
     // 隐藏进度指示器
-    await sendMessageToTab(tabId, { action: 'hideProgress' });
+    if (showPageProgress) {
+      await sendMessageToTab(tabId, { action: 'hideProgress' });
+    }
 
     // 拼接截图
     const finalDataUrl = await stitchScreenshots(screenshots, captureWidth, totalHeight, captureViewportHeight, format, quality);
@@ -211,7 +228,9 @@ async function captureFullPage(tabId, format = 'png', quality = 92, onProgress =
     // 确保恢复 fixed/sticky 元素和隐藏进度指示器
     try {
       await restoreFixedElements(tabId);
-      await sendMessageToTab(tabId, { action: 'hideProgress' });
+      if (showPageProgress) {
+        await sendMessageToTab(tabId, { action: 'hideProgress' });
+      }
     } catch (e) {}
     return { success: false, error: error.message };
   }
@@ -629,7 +648,8 @@ async function handleMessage(message, sender) {
           // popup 可能已关闭，忽略错误
         });
       };
-      return await captureFullPage(tab.id, params.format, params.quality, onProgress);
+      // 从 popup 调用时，不在页面上显示进度条（popup 有自己的进度条）
+      return await captureFullPage(tab.id, params.format, params.quality, onProgress, false);
     }
 
     case 'captureSelection': {
