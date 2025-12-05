@@ -280,5 +280,93 @@
   "batchNote": {
     "message": "Click to start capturing selected tabs one by one",
     "description": "Batch capture note"
+  },
+  "editorTitle": {
+    "message": "Edit Screenshot",
+    "description": "Editor panel title"
+  },
+  "editorUndo": {
+    "message": "Undo (Ctrl+Z)",
+    "description": "Undo button tooltip"
+  },
+  "editorRedo": {
+    "message": "Redo (Ctrl+Shift+Z)",
+    "description": "Redo button tooltip"
+  },
+  "editorClose": {
+    "message": "Close (ESC)",
+    "description": "Close button tooltip"
+  },
+  "editorRect": {
+    "message": "Rectangle",
+    "description": "Rectangle tool"
+  },
+  "editorEllipse": {
+    "message": "Ellipse",
+    "description": "Ellipse tool"
+  },
+  "editorArrow": {
+    "message": "Arrow",
+    "description": "Arrow tool"
+  },
+  "editorLine": {
+    "message": "Line",
+    "description": "Line tool"
+  },
+  "editorPen": {
+    "message": "Pen",
+    "description": "Pen tool"
+  },
+  "editorMarker": {
+    "message": "Marker",
+    "description": "Marker/highlighter tool"
+  },
+  "editorText": {
+    "message": "Text",
+    "description": "Text tool"
+  },
+  "editorMosaic": {
+    "message": "Mosaic",
+    "description": "Mosaic tool"
+  },
+  "editorBlur": {
+    "message": "Blur",
+    "description": "Blur tool"
+  },
+  "editorTemplateShadow": {
+    "message": "Shadow Effect",
+    "description": "Shadow template"
+  },
+  "editorTemplateRounded": {
+    "message": "Rounded Corners",
+    "description": "Rounded template"
+  },
+  "editorTemplateBrowser": {
+    "message": "Browser Window",
+    "description": "Browser window template"
+  },
+  "editorTemplateGradient": {
+    "message": "Gradient Background",
+    "description": "Gradient background template"
+  },
+  "editorTemplatePolaroid": {
+    "message": "Polaroid Style",
+    "description": "Polaroid template"
+  },
+  "editorCancel": {
+    "message": "Cancel",
+    "description": "Cancel button"
+  },
+  "editorSave": {
+    "message": "Save",
+    "description": "Save button"
+  },
+  "editorCopyTooltip": {
+    "message": "Copy to clipboard (Ctrl+C)",
+    "description": "Copy button tooltip"
+  },
+  "editorSaveTooltip": {
+    "message": "Save to local (Ctrl+S)",
+    "description": "Save button tooltip"
   }
 }

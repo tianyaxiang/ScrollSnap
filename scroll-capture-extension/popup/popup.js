@@ -197,9 +197,19 @@ async function checkLastCapture() {
       const { dataUrl, dimensions, timestamp } = data.lastCapture;
       // Only show if captured within last 5 seconds
       if (Date.now() - timestamp < 5000) {
-        showPreview(dataUrl, dimensions);
+        // 发送到 content script 打开编辑器
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab) {
+          await chrome.tabs.sendMessage(tab.id, {
+            action: 'showPreview',
+            dataUrl: dataUrl,
+            dimensions: dimensions
+          });
+        }
         // Clear the stored capture
         await chrome.storage.local.remove(['lastCapture']);
+        // 关闭 popup
+        window.close();
       }
     }
   } catch (error) {
@@ -274,11 +284,21 @@ async function startCapture(mode) {
       format: state.selectedFormat,
       quality: state.jpegQuality
     });
-    
+
     hideProgress();
-    
+
     if (result.success) {
-      showPreview(result.dataUrl, result.dimensions);
+      // 发送截图结果到 content script，在页面内打开编辑器
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab) {
+        await chrome.tabs.sendMessage(tab.id, {
+          action: 'showPreview',
+          dataUrl: result.dataUrl,
+          dimensions: result.dimensions
+        });
+      }
+      // 关闭 popup
+      window.close();
     } else {
       showError(getErrorMessage(result.error));
     }

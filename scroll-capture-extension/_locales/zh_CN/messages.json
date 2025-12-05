@@ -280,5 +280,93 @@
   "batchNote": {
     "message": "点击开始后将依次截取选中的标签页",
     "description": "Batch capture note"
+  },
+  "editorTitle": {
+    "message": "编辑截图",
+    "description": "Editor panel title"
+  },
+  "editorUndo": {
+    "message": "撤销 (Ctrl+Z)",
+    "description": "Undo button tooltip"
+  },
+  "editorRedo": {
+    "message": "重做 (Ctrl+Shift+Z)",
+    "description": "Redo button tooltip"
+  },
+  "editorClose": {
+    "message": "关闭 (ESC)",
+    "description": "Close button tooltip"
+  },
+  "editorRect": {
+    "message": "矩形",
+    "description": "Rectangle tool"
+  },
+  "editorEllipse": {
+    "message": "椭圆",
+    "description": "Ellipse tool"
+  },
+  "editorArrow": {
+    "message": "箭头",
+    "description": "Arrow tool"
+  },
+  "editorLine": {
+    "message": "直线",
+    "description": "Line tool"
+  },
+  "editorPen": {
+    "message": "画笔",
+    "description": "Pen tool"
+  },
+  "editorMarker": {
+    "message": "马克笔",
+    "description": "Marker/highlighter tool"
+  },
+  "editorText": {
+    "message": "文字",
+    "description": "Text tool"
+  },
+  "editorMosaic": {
+    "message": "马赛克",
+    "description": "Mosaic tool"
+  },
+  "editorBlur": {
+    "message": "模糊",
+    "description": "Blur tool"
+  },
+  "editorTemplateShadow": {
+    "message": "阴影效果",
+    "description": "Shadow template"
+  },
+  "editorTemplateRounded": {
+    "message": "圆角效果",
+    "description": "Rounded template"
+  },
+  "editorTemplateBrowser": {
+    "message": "浏览器窗口",
+    "description": "Browser window template"
+  },
+  "editorTemplateGradient": {
+    "message": "渐变背景",
+    "description": "Gradient background template"
+  },
+  "editorTemplatePolaroid": {
+    "message": "拍立得效果",
+    "description": "Polaroid template"
+  },
+  "editorCancel": {
+    "message": "取消",
+    "description": "Cancel button"
+  },
+  "editorSave": {
+    "message": "保存",
+    "description": "Save button"
+  },
+  "editorCopyTooltip": {
+    "message": "复制到剪贴板 (Ctrl+C)",
+    "description": "Copy button tooltip"
+  },
+  "editorSaveTooltip": {
+    "message": "保存到本地 (Ctrl+S)",
+    "description": "Save button tooltip"
   }
 }
