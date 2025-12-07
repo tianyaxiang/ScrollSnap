@@ -290,7 +290,7 @@
 
       // 获取元素引用
       this.canvas = wrapper.querySelector('.sc-editor-canvas');
-      this.ctx = this.canvas.getContext('2d');
+      this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
       this.editorWrapper = wrapper;
     }
 
