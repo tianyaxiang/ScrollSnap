@@ -390,6 +390,7 @@
           padding: 20px;
           background: #0d0d0d;
           min-height: 300px;
+          position: relative;
         }
 
         .sc-editor-canvas {
@@ -967,12 +968,19 @@
     _onMouseDown(e) {
       if (this.currentTool === TOOL_TYPES.NONE) return;
 
+      // 如果正在输入文字，点击画布其他位置会完成当前输入并开始新的输入
+      if (this._isTextInputting && this.currentTool === TOOL_TYPES.TEXT) {
+        this._finishTextInput();
+      }
+
       const coords = this._getCanvasCoords(e);
       this.startX = coords.x;
       this.startY = coords.y;
       this.isDrawing = true;
 
       if (this.currentTool === TOOL_TYPES.TEXT) {
+        e.preventDefault();
+        e.stopPropagation();
         this._startTextInput(coords.x, coords.y);
         this.isDrawing = false;
         return;
@@ -1246,35 +1254,78 @@
      * 开始文字输入
      */
     _startTextInput(x, y) {
-      if (this.textInput) {
-        this._finishTextInput();
-      }
+      // 不需要检查 this.textInput，因为在 _onMouseDown 中已经调用 _finishTextInput 了
 
       const wrapper = this.editorWrapper.querySelector('.sc-editor-canvas-wrapper');
       const rect = this.canvas.getBoundingClientRect();
+      const wrapperRect = wrapper.getBoundingClientRect();
       const scaleX = rect.width / this.canvas.width;
       const scaleY = rect.height / this.canvas.height;
+
+      // 计算输入框位置（相对于 wrapper）
+      const inputLeft = rect.left - wrapperRect.left + x * scaleX;
+      const inputTop = rect.top - wrapperRect.top + y * scaleY;
 
       this.textInput = document.createElement('textarea');
       this.textInput.className = 'sc-editor-text-input';
       this.textInput.style.cssText = `
         position: absolute;
-        left: ${rect.left - wrapper.getBoundingClientRect().left + x * scaleX}px;
-        top: ${rect.top - wrapper.getBoundingClientRect().top + y * scaleY}px;
+        left: ${inputLeft}px;
+        top: ${inputTop}px;
         color: ${this.currentColor};
-        font-size: ${this.fontSize * scaleY}px;
+        font-size: ${Math.max(14, this.fontSize * scaleY)}px;
+        z-index: 9999;
+        background: rgba(255, 255, 255, 0.95);
+        border: 2px dashed ${this.currentColor};
+        outline: none;
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        resize: both;
+        min-width: 120px;
+        min-height: 32px;
+        padding: 6px 8px;
+        box-sizing: border-box;
+        line-height: 1.4;
+        pointer-events: auto;
       `;
 
       this.textInputX = x;
       this.textInputY = y;
+      this._isTextInputting = true;
 
       wrapper.appendChild(this.textInput);
-      this.textInput.focus();
 
-      // 失焦时完成输入
-      this.textInput.addEventListener('blur', () => {
-        setTimeout(() => this._finishTextInput(), 100);
+      // 阻止输入框上的 mousedown 事件冒泡，防止触发画布的事件
+      this.textInput.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
       });
+
+      // 使用多个延迟确保焦点
+      this.textInput.focus();
+      setTimeout(() => {
+        if (this.textInput) {
+          this.textInput.focus();
+        }
+      }, 0);
+      setTimeout(() => {
+        if (this.textInput) {
+          this.textInput.focus();
+        }
+      }, 50);
+
+      // 按 Enter+Ctrl/Cmd 完成输入，Escape 取消输入
+      this._textInputKeyHandler = (e) => {
+        e.stopPropagation(); // 阻止所有键盘事件冒泡
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          // 取消输入，不保存文字
+          this.textInput.value = '';
+          this._finishTextInput();
+        } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          this._finishTextInput();
+        }
+      };
+      this.textInput.addEventListener('keydown', this._textInputKeyHandler);
     }
 
     /**
@@ -1302,6 +1353,8 @@
 
       this.textInput.remove();
       this.textInput = null;
+      this._textInputKeyHandler = null;
+      this._isTextInputting = false;
     }
 
     /**
@@ -1372,6 +1425,11 @@
      * 键盘事件
      */
     _onKeyDown(e) {
+      // 如果正在输入文字，不处理全局快捷键（除了在输入框的keydown中处理的）
+      if (this._isTextInputting) {
+        return;
+      }
+
       // Ctrl/Cmd + Z 撤销
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
@@ -1440,6 +1498,14 @@
      */
     destroy() {
       document.removeEventListener('keydown', this._onKeyDown.bind(this));
+
+      // 清理文字输入相关
+      if (this.textInput) {
+        this.textInput.remove();
+        this.textInput = null;
+      }
+      this._textInputKeyHandler = null;
+      this._isTextInputting = false;
 
       if (this.editorWrapper) {
         this.editorWrapper.remove();
