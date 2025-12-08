@@ -1897,6 +1897,95 @@
   let batchResultsPanel = null;
   let batchResultsData = [];
   let batchFormat = 'png';
+  let batchCurrentTemplate = 'none'; // 当前批量美化模板
+
+  /**
+   * 应用美化模板到图片（独立函数，供批量美化使用）
+   */
+  async function applyTemplateToImage(dataUrl, template, padding = 40) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        let newWidth, newHeight, imgX, imgY;
+        const imgW = img.width, imgH = img.height;
+
+        switch (template) {
+          case 'shadow': newWidth = img.width + padding * 2; newHeight = img.height + padding * 2; imgX = padding; imgY = padding; break;
+          case 'rounded': newWidth = img.width; newHeight = img.height; imgX = 0; imgY = 0; break;
+          case 'browser': newWidth = img.width + padding; newHeight = img.height + 40 + padding; imgX = padding / 2; imgY = 40 + padding / 2; break;
+          case 'gradient_bg': newWidth = img.width + padding * 3; newHeight = img.height + padding * 3; imgX = padding * 1.5; imgY = padding * 1.5; break;
+          case 'polaroid': newWidth = img.width + padding; newHeight = img.height + padding + 60; imgX = padding / 2; imgY = padding / 2; break;
+          default: resolve(dataUrl); return;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = newWidth;
+        canvas.height = newHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, newWidth, newHeight);
+
+        // 绘制圆角矩形辅助函数
+        const roundedRect = (x, y, w, h, r) => {
+          ctx.beginPath();
+          ctx.moveTo(x + r, y);
+          ctx.lineTo(x + w - r, y);
+          ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+          ctx.lineTo(x + w, y + h - r);
+          ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+          ctx.lineTo(x + r, y + h);
+          ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+          ctx.lineTo(x, y + r);
+          ctx.quadraticCurveTo(x, y, x + r, y);
+          ctx.closePath();
+        };
+
+        switch (template) {
+          case 'shadow':
+            ctx.fillStyle = '#f5f5f5'; ctx.fillRect(0, 0, newWidth, newHeight);
+            ctx.shadowColor = 'rgba(0,0,0,0.3)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 10;
+            ctx.fillStyle = '#fff'; ctx.fillRect(imgX, imgY, imgW, imgH);
+            ctx.shadowColor = 'transparent'; break;
+          case 'rounded':
+            ctx.save(); roundedRect(0, 0, newWidth, newHeight, 16); ctx.clip(); break;
+          case 'browser':
+            ctx.fillStyle = '#f5f5f5'; ctx.fillRect(0, 0, newWidth, newHeight);
+            ctx.shadowColor = 'rgba(0,0,0,0.2)'; ctx.shadowBlur = 15; ctx.shadowOffsetY = 5;
+            ctx.fillStyle = '#fff'; roundedRect(padding/2, padding/2, newWidth - padding, newHeight - padding, 8); ctx.fill();
+            ctx.shadowColor = 'transparent';
+            ctx.fillStyle = '#e8e8e8'; ctx.beginPath();
+            ctx.moveTo(padding/2 + 8, padding/2); ctx.lineTo(newWidth - padding/2 - 8, padding/2);
+            ctx.quadraticCurveTo(newWidth - padding/2, padding/2, newWidth - padding/2, padding/2 + 8);
+            ctx.lineTo(newWidth - padding/2, padding/2 + 40); ctx.lineTo(padding/2, padding/2 + 40);
+            ctx.lineTo(padding/2, padding/2 + 8); ctx.quadraticCurveTo(padding/2, padding/2, padding/2 + 8, padding/2);
+            ctx.closePath(); ctx.fill();
+            const btnY = padding/2 + 20, btnX = padding/2 + 16;
+            ctx.fillStyle = '#ff5f56'; ctx.beginPath(); ctx.arc(btnX, btnY, 6, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#ffbd2e'; ctx.beginPath(); ctx.arc(btnX + 20, btnY, 6, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#27c93f'; ctx.beginPath(); ctx.arc(btnX + 40, btnY, 6, 0, Math.PI * 2); ctx.fill();
+            break;
+          case 'gradient_bg':
+            const gradient = ctx.createLinearGradient(0, 0, newWidth, newHeight);
+            gradient.addColorStop(0, '#667eea'); gradient.addColorStop(1, '#764ba2');
+            ctx.fillStyle = gradient; ctx.fillRect(0, 0, newWidth, newHeight);
+            ctx.shadowColor = 'rgba(0,0,0,0.3)'; ctx.shadowBlur = 30; ctx.shadowOffsetY = 15;
+            ctx.fillStyle = '#fff'; roundedRect(imgX, imgY, imgW, imgH, 8); ctx.fill();
+            ctx.shadowColor = 'transparent'; break;
+          case 'polaroid':
+            ctx.fillStyle = '#f0f0f0'; ctx.fillRect(0, 0, newWidth, newHeight);
+            ctx.shadowColor = 'rgba(0,0,0,0.2)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 8;
+            ctx.fillStyle = '#fff'; ctx.fillRect(padding/4, padding/4, newWidth - padding/2, newHeight - padding/2);
+            ctx.shadowColor = 'transparent'; break;
+        }
+
+        ctx.drawImage(img, imgX, imgY, imgW, imgH);
+        if (template === 'rounded') ctx.restore();
+
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = dataUrl;
+    });
+  }
 
   /**
    * 显示批量截图进度面板
@@ -2048,6 +2137,16 @@
       <style>
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         .batch-thumb:hover { border-color: #07C160 !important; }
+        .batch-template-btn { width: 36px; height: 36px; border: 2px solid #ddd; border-radius: 6px; background: #f5f5f5; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 4px; transition: all 0.15s; }
+        .batch-template-btn:hover { border-color: #aaa; }
+        .batch-template-btn.active { border-color: #07C160; background: #E8F8EE; }
+        .batch-template-preview { width: 100%; height: 100%; border-radius: 2px; background: #999; }
+        .batch-template-preview.shadow-preview { box-shadow: 2px 2px 4px rgba(0,0,0,0.4); }
+        .batch-template-preview.rounded-preview { border-radius: 4px; }
+        .batch-template-preview.browser-preview { position: relative; }
+        .batch-template-preview.browser-preview::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 6px; background: #ccc; border-radius: 2px 2px 0 0; }
+        .batch-template-preview.gradient-preview { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .batch-template-preview.polaroid-preview { background: #fff; border: 1px solid #ddd; padding: 2px 2px 6px 2px; }
       </style>
       <div style="padding: 16px 20px; border-bottom: 1px solid #EBEBEB; display: flex; justify-content: space-between; align-items: center;">
         <div>
@@ -2056,10 +2155,34 @@
         </div>
         <button id="batch-close-btn" style="background: transparent; border: none; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; color: #888888; font-size: 20px; display: flex; align-items: center; justify-content: center;">×</button>
       </div>
-      <div style="padding: 16px 20px; overflow-x: auto; border-bottom: 1px solid #EBEBEB; background: #F5F5F5;">
+      <div id="batch-thumbnails-container" style="padding: 16px 20px; overflow-x: auto; border-bottom: 1px solid #EBEBEB; background: #F5F5F5;">
         <div style="display: flex; gap: 12px; min-width: max-content;">
           ${thumbnailsHtml}
         </div>
+      </div>
+      <div style="padding: 12px 20px; border-bottom: 1px solid #EBEBEB; display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 13px; color: #666; white-space: nowrap;">批量美化:</span>
+        <div style="display: flex; gap: 8px;">
+          <button class="batch-template-btn active" data-template="none" title="无效果">
+            <div class="batch-template-preview" style="background: #ccc;"></div>
+          </button>
+          <button class="batch-template-btn" data-template="shadow" title="阴影">
+            <div class="batch-template-preview shadow-preview"></div>
+          </button>
+          <button class="batch-template-btn" data-template="rounded" title="圆角">
+            <div class="batch-template-preview rounded-preview"></div>
+          </button>
+          <button class="batch-template-btn" data-template="browser" title="浏览器窗口">
+            <div class="batch-template-preview browser-preview"></div>
+          </button>
+          <button class="batch-template-btn" data-template="gradient_bg" title="渐变背景">
+            <div class="batch-template-preview gradient-preview"></div>
+          </button>
+          <button class="batch-template-btn" data-template="polaroid" title="拍立得">
+            <div class="batch-template-preview polaroid-preview"></div>
+          </button>
+        </div>
+        <span id="batch-beautify-status" style="font-size: 12px; color: #888; margin-left: auto;"></span>
       </div>
       <div style="padding: 14px 20px; display: flex; gap: 10px; justify-content: flex-end;">
         <button id="batch-download-all-btn" style="
@@ -2086,6 +2209,21 @@
     document.getElementById('batch-close-btn').addEventListener('click', removeBatchResultsPanel);
     document.getElementById('batch-download-all-btn').addEventListener('click', downloadAllBatchResults);
 
+    // 美化模板按钮事件
+    batchResultsPanel.querySelectorAll('.batch-template-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const template = btn.dataset.template;
+        if (template === batchCurrentTemplate) return;
+
+        // 更新按钮状态
+        batchResultsPanel.querySelectorAll('.batch-template-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        // 应用美化
+        await applyBatchBeautify(template);
+      });
+    });
+
     // 缩略图点击预览
     batchResultsPanel.querySelectorAll('.batch-thumb').forEach(thumb => {
       thumb.addEventListener('click', () => {
@@ -2101,6 +2239,120 @@
   }
 
   /**
+   * 批量应用美化模板
+   */
+  async function applyBatchBeautify(template) {
+    const statusEl = document.getElementById('batch-beautify-status');
+    const successResults = batchResultsData.filter(r => r.success && r.originalDataUrl);
+
+    // 如果没有原始数据，先保存
+    batchResultsData.forEach(r => {
+      if (r.success && r.dataUrl && !r.originalDataUrl) {
+        r.originalDataUrl = r.dataUrl;
+      }
+    });
+
+    batchCurrentTemplate = template;
+
+    if (template === 'none') {
+      // 恢复原始图片
+      batchResultsData.forEach(r => {
+        if (r.success && r.originalDataUrl) {
+          r.dataUrl = r.originalDataUrl;
+        }
+      });
+      updateBatchThumbnails();
+      if (statusEl) statusEl.textContent = '';
+      return;
+    }
+
+    // 应用美化模板
+    const total = batchResultsData.filter(r => r.success).length;
+    let processed = 0;
+
+    if (statusEl) statusEl.textContent = `处理中 0/${total}...`;
+
+    for (let i = 0; i < batchResultsData.length; i++) {
+      const result = batchResultsData[i];
+      if (result.success && result.originalDataUrl) {
+        try {
+          result.dataUrl = await applyTemplateToImage(result.originalDataUrl, template);
+          processed++;
+          if (statusEl) statusEl.textContent = `处理中 ${processed}/${total}...`;
+        } catch (e) {
+          console.error('Failed to apply template:', e);
+        }
+      }
+    }
+
+    updateBatchThumbnails();
+    if (statusEl) statusEl.textContent = `已应用美化效果`;
+    setTimeout(() => {
+      if (statusEl && statusEl.textContent === '已应用美化效果') {
+        statusEl.textContent = '';
+      }
+    }, 2000);
+  }
+
+  /**
+   * 更新批量结果缩略图
+   */
+  function updateBatchThumbnails() {
+    const container = document.getElementById('batch-thumbnails-container');
+    if (!container) return;
+
+    let thumbnailsHtml = '';
+    batchResultsData.forEach((result, index) => {
+      if (result.success && result.dataUrl) {
+        thumbnailsHtml += `
+          <div class="batch-thumb" data-index="${index}" style="
+            width: 120px;
+            height: 80px;
+            border-radius: 4px;
+            overflow: hidden;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+            flex-shrink: 0;
+            position: relative;
+          ">
+            <img src="${result.dataUrl}" style="width: 100%; height: 100%; object-fit: cover;" />
+            <div style="position: absolute; bottom: 0; left: 0; right: 0; padding: 4px 6px; background: linear-gradient(transparent, rgba(0,0,0,0.6)); color: white; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${result.title ? result.title.substring(0, 15) : ''}</div>
+          </div>
+        `;
+      } else {
+        thumbnailsHtml += `
+          <div style="
+            width: 120px;
+            height: 80px;
+            border-radius: 4px;
+            background: #FEF0F0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #FA5151;
+            font-size: 12px;
+            flex-shrink: 0;
+          ">截图失败</div>
+        `;
+      }
+    });
+
+    container.innerHTML = `<div style="display: flex; gap: 12px; min-width: max-content;">${thumbnailsHtml}</div>`;
+
+    // 重新绑定缩略图点击事件
+    container.querySelectorAll('.batch-thumb').forEach(thumb => {
+      thumb.addEventListener('click', () => {
+        const index = parseInt(thumb.dataset.index, 10);
+        const result = batchResultsData[index];
+        if (result && result.success && result.dataUrl) {
+          showSinglePreview(result.dataUrl, result.dimensions, result.title);
+        }
+      });
+    });
+  }
+
+  /**
    * 移除批量结果面板
    */
   function removeBatchResultsPanel() {
@@ -2111,6 +2363,7 @@
       batchResultsPanel = null;
     }
     batchResultsData = [];
+    batchCurrentTemplate = 'none';
     document.removeEventListener('keydown', onBatchResultsKeyDown);
   }
 
