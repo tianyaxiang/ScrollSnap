@@ -121,7 +121,7 @@
 1. 访问 Chrome 应用商店搜索「ScrollSnap」或「滚动截屏」
 2. 或者从 GitHub 下载源码，开发者模式加载
 
-GitHub 地址：https://github.com/你的用户名/ScrollSnap
+GitHub 地址：https://github.com/tianyaxiang/ScrollSnap
 
 ---
 
@@ -131,7 +131,7 @@ GitHub 地址：https://github.com/你的用户名/ScrollSnap
 
 它没有花里胡哨的功能堆砌，但该有的功能一个不少。从基础截图到编辑美化，从单页截取到批量处理，覆盖了日常使用的方方面面。
 
-如果你经���需要截取网页内容，强烈建议试试！
+如果你经常需要截取网页内容，强烈建议试试！
 
 ---
 
