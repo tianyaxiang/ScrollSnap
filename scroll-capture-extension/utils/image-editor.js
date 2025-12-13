@@ -336,6 +336,9 @@
           padding: 12px 16px;
           background: #252525;
           border-bottom: 1px solid #333;
+          flex-shrink: 0;
+          position: relative;
+          z-index: 10;
         }
 
         .sc-editor-title {
@@ -384,20 +387,18 @@
         .sc-editor-canvas-wrapper {
           flex: 1;
           overflow: auto;
-          display: flex;
-          align-items: center;
-          justify-content: center;
           padding: 20px;
           background: #0d0d0d;
           min-height: 300px;
           position: relative;
+          z-index: 1;
         }
 
         .sc-editor-canvas {
-          max-width: 100%;
-          max-height: 100%;
+          display: block;
           background: #fff;
           box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+          margin: 0 auto;
         }
 
         .sc-editor-toolbar {
@@ -408,6 +409,9 @@
           border-top: 1px solid #333;
           gap: 8px;
           flex-wrap: wrap;
+          flex-shrink: 0;
+          position: relative;
+          z-index: 10;
         }
 
         .sc-editor-tools {
@@ -565,6 +569,9 @@
           padding: 12px 16px;
           background: #252525;
           border-top: 1px solid #333;
+          flex-shrink: 0;
+          position: relative;
+          z-index: 10;
         }
 
         .sc-editor-btn-secondary {
