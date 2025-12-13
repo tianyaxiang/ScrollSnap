@@ -19,6 +19,7 @@
     TEXT: 'text',
     MOSAIC: 'mosaic',
     BLUR: 'blur',
+    CROP: 'crop',
   };
 
   // 预设颜色
@@ -69,6 +70,12 @@
       this.onClose = options.onClose || null;
       this.getMessage = options.getMessage || ((key) => key);
       this._boundOnKeyDown = this._onKeyDown.bind(this);
+      // 裁剪相关状态
+      this.cropSelection = null; // { x, y, width, height }
+      this.isCropping = false;
+      this.cropHandles = [];
+      this.activeCropHandle = null;
+      this.cropOverlay = null;
     }
 
     async init(dataUrl, container) {
@@ -123,6 +130,7 @@
                 <button class="sc-editor-tool" data-tool="text" title="${this.getMessage('editorText')}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg></button>
                 <button class="sc-editor-tool" data-tool="mosaic" title="${this.getMessage('editorMosaic')}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="6" height="6"/><rect x="15" y="3" width="6" height="6"/><rect x="9" y="9" width="6" height="6"/><rect x="3" y="15" width="6" height="6"/><rect x="15" y="15" width="6" height="6"/></svg></button>
                 <button class="sc-editor-tool" data-tool="blur" title="${this.getMessage('editorBlur')}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg></button>
+                <button class="sc-editor-tool" data-tool="crop" title="${this.getMessage('editorCrop')}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2v6H2M6 8v10h10M18 8H8M18 8v14M18 8h4"/></svg></button>
               </div>
               <div class="sc-editor-divider"></div>
               <div class="sc-editor-templates">
@@ -203,10 +211,18 @@
     }
 
     _selectTool(tool) {
+      // 如果从裁剪工具切换到其他工具，先清除裁剪UI
+      if (this.currentTool === TOOL_TYPES.CROP && tool !== TOOL_TYPES.CROP) {
+        this._clearCropUI();
+      }
       this.currentTool = tool;
       this.editorWrapper.querySelectorAll('.sc-editor-tool').forEach(btn => btn.classList.toggle('active', btn.dataset.tool === tool));
-      this.canvas.style.cursor = tool === TOOL_TYPES.NONE ? 'default' : tool === TOOL_TYPES.TEXT ? 'text' : 'crosshair';
+      this.canvas.style.cursor = tool === TOOL_TYPES.NONE ? 'default' : tool === TOOL_TYPES.TEXT ? 'text' : tool === TOOL_TYPES.CROP ? 'crosshair' : 'crosshair';
       if (tool !== TOOL_TYPES.TEXT && this.textInput) this._finishTextInput();
+      // 如果选择裁剪工具，初始化裁剪UI
+      if (tool === TOOL_TYPES.CROP) {
+        this._initCropUI();
+      }
     }
 
     _selectColor(color) {
@@ -306,6 +322,8 @@
 
     _onMouseDown(e) {
       if (this.currentTool === TOOL_TYPES.NONE) return;
+      // 裁剪工具有自己的事件处理，不走正常绘制流程
+      if (this.currentTool === TOOL_TYPES.CROP) return;
       // 如果正在输入文字且当前是文字工具，先完成输入
       if (this._isTextInputting && this.currentTool === TOOL_TYPES.TEXT) {
         this._finishTextInput();
@@ -408,6 +426,405 @@
       tempCtx.drawImage(this.canvas, x, y, width, height, 0, 0, width, height);
       for (let i = 0; i < 3; i++) { const sw = width * 0.5, sh = height * 0.5; tempCtx.drawImage(tempCanvas, 0, 0, width, height, 0, 0, sw, sh); tempCtx.drawImage(tempCanvas, 0, 0, sw, sh, 0, 0, width, height); }
       this.ctx.drawImage(tempCanvas, 0, 0, width, height, x, y, width, height);
+    }
+
+    // ============================================
+    // 裁剪功能
+    // ============================================
+
+    _initCropUI() {
+      // 如果已存在裁剪 UI，先清除
+      this._clearCropUI();
+
+      const wrapper = this.editorWrapper.querySelector('.sc-editor-canvas-wrapper');
+      const canvasRect = this.canvas.getBoundingClientRect();
+      const wrapperRect = wrapper.getBoundingClientRect();
+
+      // 创建裁剪覆盖层容器
+      this.cropOverlay = document.createElement('div');
+      this.cropOverlay.className = 'sc-crop-overlay';
+      this.cropOverlay.style.cssText = `
+        position: absolute;
+        left: ${canvasRect.left - wrapperRect.left}px;
+        top: ${canvasRect.top - wrapperRect.top}px;
+        width: ${canvasRect.width}px;
+        height: ${canvasRect.height}px;
+        pointer-events: none;
+        z-index: 100;
+      `;
+
+      // 创建暗色遮罩（四个区域）
+      const maskStyle = `position:absolute;background:rgba(0,0,0,0.5);pointer-events:auto;`;
+      this.cropMasks = {
+        top: this._createDiv(maskStyle),
+        bottom: this._createDiv(maskStyle),
+        left: this._createDiv(maskStyle),
+        right: this._createDiv(maskStyle)
+      };
+      Object.values(this.cropMasks).forEach(mask => this.cropOverlay.appendChild(mask));
+
+      // 创建裁剪选区框
+      this.cropBox = document.createElement('div');
+      this.cropBox.className = 'sc-crop-box';
+      this.cropBox.style.cssText = `
+        position: absolute;
+        border: 2px dashed #07C160;
+        background: transparent;
+        pointer-events: auto;
+        cursor: move;
+        display: none;
+      `;
+      this.cropOverlay.appendChild(this.cropBox);
+
+      // 创建 8 个调整手柄
+      const handlePositions = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+      const cursors = {
+        'nw': 'nwse-resize', 'n': 'ns-resize', 'ne': 'nesw-resize', 'e': 'ew-resize',
+        'se': 'nwse-resize', 's': 'ns-resize', 'sw': 'nesw-resize', 'w': 'ew-resize'
+      };
+      this.cropHandles = handlePositions.map(pos => {
+        const handle = document.createElement('div');
+        handle.className = 'sc-crop-handle';
+        handle.dataset.position = pos;
+        handle.style.cssText = `
+          position: absolute;
+          width: 10px;
+          height: 10px;
+          background: #07C160;
+          border: 1px solid #fff;
+          border-radius: 2px;
+          pointer-events: auto;
+          cursor: ${cursors[pos]};
+          display: none;
+        `;
+        this.cropBox.appendChild(handle);
+        return handle;
+      });
+
+      // 创建裁剪确认/取消按钮
+      this.cropActions = document.createElement('div');
+      this.cropActions.className = 'sc-crop-actions';
+      this.cropActions.style.cssText = `
+        position: absolute;
+        display: none;
+        gap: 8px;
+        padding: 6px;
+        background: #fff;
+        border-radius: 4px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        pointer-events: auto;
+        z-index: 101;
+      `;
+
+      const confirmBtn = document.createElement('button');
+      confirmBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#07C160" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>`;
+      confirmBtn.style.cssText = `width:28px;height:28px;border:none;border-radius:4px;background:#E8F8EE;cursor:pointer;display:flex;align-items:center;justify-content:center;`;
+      confirmBtn.title = this.getMessage('editorCropConfirm') || '确认裁剪';
+      confirmBtn.onclick = (e) => { e.stopPropagation(); this._applyCrop(); };
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>`;
+      cancelBtn.style.cssText = `width:28px;height:28px;border:none;border-radius:4px;background:#f5f5f5;cursor:pointer;display:flex;align-items:center;justify-content:center;`;
+      cancelBtn.title = this.getMessage('editorCropCancel') || '取消裁剪';
+      cancelBtn.onclick = (e) => { e.stopPropagation(); this._cancelCrop(); };
+
+      this.cropActions.appendChild(cancelBtn);
+      this.cropActions.appendChild(confirmBtn);
+      this.cropOverlay.appendChild(this.cropActions);
+
+      wrapper.appendChild(this.cropOverlay);
+
+      // 绑定事件
+      this._bindCropEvents();
+
+      // 初始化全选状态（默认选中整个画布）
+      this._setCropSelection(0, 0, this.canvas.width, this.canvas.height);
+    }
+
+    _createDiv(style) {
+      const div = document.createElement('div');
+      div.style.cssText = style;
+      return div;
+    }
+
+    _bindCropEvents() {
+      this._cropMouseDownHandler = (e) => this._onCropMouseDown(e);
+      this._cropMouseMoveHandler = (e) => this._onCropMouseMove(e);
+      this._cropMouseUpHandler = (e) => this._onCropMouseUp(e);
+
+      this.cropOverlay.addEventListener('mousedown', this._cropMouseDownHandler);
+      document.addEventListener('mousemove', this._cropMouseMoveHandler);
+      document.addEventListener('mouseup', this._cropMouseUpHandler);
+    }
+
+    _onCropMouseDown(e) {
+      if (this.currentTool !== TOOL_TYPES.CROP) return;
+
+      const target = e.target;
+      const canvasRect = this.canvas.getBoundingClientRect();
+      const x = (e.clientX - canvasRect.left) / canvasRect.width * this.canvas.width;
+      const y = (e.clientY - canvasRect.top) / canvasRect.height * this.canvas.height;
+
+      // 检查是否点击了手柄
+      if (target.classList.contains('sc-crop-handle')) {
+        this.isCropping = true;
+        this.activeCropHandle = target.dataset.position;
+        this._cropStartX = x;
+        this._cropStartY = y;
+        this._cropStartSelection = { ...this.cropSelection };
+        e.preventDefault();
+        return;
+      }
+
+      // 检查是否点击了裁剪框内部（拖动）
+      if (target === this.cropBox) {
+        this.isCropping = true;
+        this.activeCropHandle = 'move';
+        this._cropStartX = x;
+        this._cropStartY = y;
+        this._cropStartSelection = { ...this.cropSelection };
+        e.preventDefault();
+        return;
+      }
+
+      // 点击遮罩区域，重新绘制选区
+      if (Object.values(this.cropMasks).includes(target)) {
+        this.isCropping = true;
+        this.activeCropHandle = 'draw';
+        this._cropStartX = x;
+        this._cropStartY = y;
+        this.cropSelection = { x: x, y: y, width: 0, height: 0 };
+        this._updateCropUI();
+        e.preventDefault();
+      }
+    }
+
+    _onCropMouseMove(e) {
+      if (!this.isCropping || this.currentTool !== TOOL_TYPES.CROP) return;
+
+      const canvasRect = this.canvas.getBoundingClientRect();
+      let x = (e.clientX - canvasRect.left) / canvasRect.width * this.canvas.width;
+      let y = (e.clientY - canvasRect.top) / canvasRect.height * this.canvas.height;
+
+      // 限制在画布范围内
+      x = Math.max(0, Math.min(this.canvas.width, x));
+      y = Math.max(0, Math.min(this.canvas.height, y));
+
+      const dx = x - this._cropStartX;
+      const dy = y - this._cropStartY;
+
+      if (this.activeCropHandle === 'draw') {
+        // 绘制新选区
+        const left = Math.min(this._cropStartX, x);
+        const top = Math.min(this._cropStartY, y);
+        const width = Math.abs(dx);
+        const height = Math.abs(dy);
+        this.cropSelection = { x: left, y: top, width, height };
+      } else if (this.activeCropHandle === 'move') {
+        // 移动选区
+        let newX = this._cropStartSelection.x + dx;
+        let newY = this._cropStartSelection.y + dy;
+        // 限制不超出画布
+        newX = Math.max(0, Math.min(this.canvas.width - this._cropStartSelection.width, newX));
+        newY = Math.max(0, Math.min(this.canvas.height - this._cropStartSelection.height, newY));
+        this.cropSelection = { ...this._cropStartSelection, x: newX, y: newY };
+      } else {
+        // 调整大小
+        this._resizeCropSelection(dx, dy);
+      }
+
+      this._updateCropUI();
+    }
+
+    _resizeCropSelection(dx, dy) {
+      const sel = this._cropStartSelection;
+      let { x, y, width, height } = sel;
+      const minSize = 20;
+
+      switch (this.activeCropHandle) {
+        case 'nw':
+          x = Math.min(sel.x + sel.width - minSize, sel.x + dx);
+          y = Math.min(sel.y + sel.height - minSize, sel.y + dy);
+          width = sel.width - (x - sel.x);
+          height = sel.height - (y - sel.y);
+          break;
+        case 'n':
+          y = Math.min(sel.y + sel.height - minSize, sel.y + dy);
+          height = sel.height - (y - sel.y);
+          break;
+        case 'ne':
+          y = Math.min(sel.y + sel.height - minSize, sel.y + dy);
+          width = Math.max(minSize, sel.width + dx);
+          height = sel.height - (y - sel.y);
+          break;
+        case 'e':
+          width = Math.max(minSize, sel.width + dx);
+          break;
+        case 'se':
+          width = Math.max(minSize, sel.width + dx);
+          height = Math.max(minSize, sel.height + dy);
+          break;
+        case 's':
+          height = Math.max(minSize, sel.height + dy);
+          break;
+        case 'sw':
+          x = Math.min(sel.x + sel.width - minSize, sel.x + dx);
+          width = sel.width - (x - sel.x);
+          height = Math.max(minSize, sel.height + dy);
+          break;
+        case 'w':
+          x = Math.min(sel.x + sel.width - minSize, sel.x + dx);
+          width = sel.width - (x - sel.x);
+          break;
+      }
+
+      // 限制在画布范围内
+      x = Math.max(0, x);
+      y = Math.max(0, y);
+      if (x + width > this.canvas.width) width = this.canvas.width - x;
+      if (y + height > this.canvas.height) height = this.canvas.height - y;
+
+      this.cropSelection = { x, y, width, height };
+    }
+
+    _onCropMouseUp(e) {
+      if (!this.isCropping) return;
+      this.isCropping = false;
+      this.activeCropHandle = null;
+
+      // 如果选区太小，重置为全选
+      if (this.cropSelection.width < 10 || this.cropSelection.height < 10) {
+        this._setCropSelection(0, 0, this.canvas.width, this.canvas.height);
+      }
+    }
+
+    _setCropSelection(x, y, width, height) {
+      this.cropSelection = { x, y, width, height };
+      this._updateCropUI();
+    }
+
+    _updateCropUI() {
+      if (!this.cropOverlay || !this.cropSelection) return;
+
+      const canvasRect = this.canvas.getBoundingClientRect();
+      const wrapperRect = this.editorWrapper.querySelector('.sc-editor-canvas-wrapper').getBoundingClientRect();
+      const scaleX = canvasRect.width / this.canvas.width;
+      const scaleY = canvasRect.height / this.canvas.height;
+
+      // 更新覆盖层位置
+      this.cropOverlay.style.left = `${canvasRect.left - wrapperRect.left}px`;
+      this.cropOverlay.style.top = `${canvasRect.top - wrapperRect.top}px`;
+      this.cropOverlay.style.width = `${canvasRect.width}px`;
+      this.cropOverlay.style.height = `${canvasRect.height}px`;
+
+      const sel = this.cropSelection;
+      const left = sel.x * scaleX;
+      const top = sel.y * scaleY;
+      const width = sel.width * scaleX;
+      const height = sel.height * scaleY;
+
+      // 更新遮罩区域
+      this.cropMasks.top.style.cssText += `left:0;top:0;width:100%;height:${top}px;`;
+      this.cropMasks.bottom.style.cssText += `left:0;top:${top + height}px;width:100%;height:${canvasRect.height - top - height}px;`;
+      this.cropMasks.left.style.cssText += `left:0;top:${top}px;width:${left}px;height:${height}px;`;
+      this.cropMasks.right.style.cssText += `left:${left + width}px;top:${top}px;width:${canvasRect.width - left - width}px;height:${height}px;`;
+
+      // 更新裁剪框
+      this.cropBox.style.display = 'block';
+      this.cropBox.style.left = `${left}px`;
+      this.cropBox.style.top = `${top}px`;
+      this.cropBox.style.width = `${width}px`;
+      this.cropBox.style.height = `${height}px`;
+
+      // 更新手柄位置
+      const handlePositions = {
+        'nw': { left: -5, top: -5 },
+        'n': { left: width / 2 - 5, top: -5 },
+        'ne': { left: width - 5, top: -5 },
+        'e': { left: width - 5, top: height / 2 - 5 },
+        'se': { left: width - 5, top: height - 5 },
+        's': { left: width / 2 - 5, top: height - 5 },
+        'sw': { left: -5, top: height - 5 },
+        'w': { left: -5, top: height / 2 - 5 }
+      };
+      this.cropHandles.forEach(handle => {
+        const pos = handlePositions[handle.dataset.position];
+        handle.style.display = 'block';
+        handle.style.left = `${pos.left}px`;
+        handle.style.top = `${pos.top}px`;
+      });
+
+      // 更新操作按钮位置
+      this.cropActions.style.display = 'flex';
+      let actionsTop = top + height + 10;
+      if (actionsTop + 40 > canvasRect.height) {
+        actionsTop = top - 46;
+        if (actionsTop < 0) actionsTop = top + 10;
+      }
+      this.cropActions.style.left = `${left + width - 72}px`;
+      this.cropActions.style.top = `${actionsTop}px`;
+    }
+
+    _applyCrop() {
+      if (!this.cropSelection || this.cropSelection.width < 10 || this.cropSelection.height < 10) {
+        this._showToast(this.getMessage('cropTooSmall') || '裁剪区域太小');
+        return;
+      }
+
+      const { x, y, width, height } = this.cropSelection;
+
+      // 获取裁剪区域的图像数据
+      const imageData = this.ctx.getImageData(
+        Math.round(x), Math.round(y),
+        Math.round(width), Math.round(height)
+      );
+
+      // 调整画布大小
+      this.canvas.width = Math.round(width);
+      this.canvas.height = Math.round(height);
+
+      // 绘制裁剪后的图像
+      this.ctx.putImageData(imageData, 0, 0);
+
+      // 保存历史
+      this._saveHistory();
+      this._updateDimensions();
+
+      // 清除裁剪 UI 并取消选择裁剪工具
+      this._clearCropUI();
+      this._selectTool(TOOL_TYPES.NONE);
+
+      this._showToast(this.getMessage('cropSuccess') || '裁剪完成');
+    }
+
+    _cancelCrop() {
+      this._clearCropUI();
+      this._selectTool(TOOL_TYPES.NONE);
+    }
+
+    _clearCropUI() {
+      if (this.cropOverlay) {
+        // 移除事件监听
+        if (this._cropMouseDownHandler) {
+          this.cropOverlay.removeEventListener('mousedown', this._cropMouseDownHandler);
+        }
+        if (this._cropMouseMoveHandler) {
+          document.removeEventListener('mousemove', this._cropMouseMoveHandler);
+        }
+        if (this._cropMouseUpHandler) {
+          document.removeEventListener('mouseup', this._cropMouseUpHandler);
+        }
+
+        this.cropOverlay.remove();
+        this.cropOverlay = null;
+      }
+      this.cropSelection = null;
+      this.cropBox = null;
+      this.cropMasks = null;
+      this.cropHandles = [];
+      this.cropActions = null;
+      this.isCropping = false;
+      this.activeCropHandle = null;
     }
 
     _startTextInput(x, y) {
@@ -1996,6 +2413,11 @@
       editorText: '文字',
       editorMosaic: '马赛克',
       editorBlur: '模糊',
+      editorCrop: '裁剪',
+      editorCropConfirm: '确认裁剪',
+      editorCropCancel: '取消裁剪',
+      cropSuccess: '裁剪完成',
+      cropTooSmall: '裁剪区域太小',
       editorTemplateShadow: '阴影效果',
       editorTemplateRounded: '圆角效果',
       editorTemplateBrowser: '浏览器窗口',

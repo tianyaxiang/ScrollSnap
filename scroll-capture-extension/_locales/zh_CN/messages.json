@@ -368,5 +368,25 @@
   "editorSaveTooltip": {
     "message": "保存到本地 (Ctrl+S)",
     "description": "Save button tooltip"
+  },
+  "editorCrop": {
+    "message": "裁剪",
+    "description": "Crop tool"
+  },
+  "editorCropConfirm": {
+    "message": "确认裁剪",
+    "description": "Confirm crop button"
+  },
+  "editorCropCancel": {
+    "message": "取消裁剪",
+    "description": "Cancel crop button"
+  },
+  "cropSuccess": {
+    "message": "裁剪完成",
+    "description": "Crop success message"
+  },
+  "cropTooSmall": {
+    "message": "裁剪区域太小",
+    "description": "Crop area too small message"
   }
 }

@@ -368,5 +368,25 @@
   "editorSaveTooltip": {
     "message": "Save to local (Ctrl+S)",
     "description": "Save button tooltip"
+  },
+  "editorCrop": {
+    "message": "Crop",
+    "description": "Crop tool"
+  },
+  "editorCropConfirm": {
+    "message": "Confirm Crop",
+    "description": "Confirm crop button"
+  },
+  "editorCropCancel": {
+    "message": "Cancel Crop",
+    "description": "Cancel crop button"
+  },
+  "cropSuccess": {
+    "message": "Crop completed",
+    "description": "Crop success message"
+  },
+  "cropTooSmall": {
+    "message": "Crop area too small",
+    "description": "Crop area too small message"
   }
 }
