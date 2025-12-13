@@ -763,21 +763,49 @@
       chrome.runtime.sendMessage({ action: 'selectionCancelled' });
     };
 
-    // 确认按钮
-    const confirmBtn = document.createElement('button');
-    confirmBtn.id = 'scroll-capture-confirm';
-    confirmBtn.style.cssText = buttonStyle + `background: #07C160 !important; border-radius: 4px !important;`;
-    confirmBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>`;
-    confirmBtn.title = '确认截图 (Enter)';
-    confirmBtn.onmouseenter = () => confirmBtn.style.background = '#06ae56';
-    confirmBtn.onmouseleave = () => confirmBtn.style.background = '#07C160';
-    confirmBtn.onclick = (e) => {
+    // 下载按钮
+    const downloadBtn = document.createElement('button');
+    downloadBtn.id = 'scroll-capture-download';
+    downloadBtn.style.cssText = buttonStyle;
+    downloadBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+    downloadBtn.title = '下载';
+    downloadBtn.onmouseenter = () => downloadBtn.style.background = '#f5f5f5';
+    downloadBtn.onmouseleave = () => downloadBtn.style.background = 'transparent';
+    downloadBtn.onclick = (e) => {
       e.stopPropagation();
-      confirmSelection();
+      captureAndDownload();
+    };
+
+    // 编辑按钮
+    const editBtn = document.createElement('button');
+    editBtn.id = 'scroll-capture-edit';
+    editBtn.style.cssText = buttonStyle;
+    editBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+    editBtn.title = '编辑';
+    editBtn.onmouseenter = () => editBtn.style.background = '#f5f5f5';
+    editBtn.onmouseleave = () => editBtn.style.background = 'transparent';
+    editBtn.onclick = (e) => {
+      e.stopPropagation();
+      captureAndEdit();
+    };
+
+    // 复制按钮（原确认按钮，改为复制功能）
+    const copyBtn = document.createElement('button');
+    copyBtn.id = 'scroll-capture-confirm';
+    copyBtn.style.cssText = buttonStyle + `background: #07C160 !important; border-radius: 4px !important;`;
+    copyBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+    copyBtn.title = '复制到剪贴板 (Enter)';
+    copyBtn.onmouseenter = () => copyBtn.style.background = '#06ae56';
+    copyBtn.onmouseleave = () => copyBtn.style.background = '#07C160';
+    copyBtn.onclick = (e) => {
+      e.stopPropagation();
+      captureAndCopy();
     };
 
     selectionToolbar.appendChild(cancelBtn);
-    selectionToolbar.appendChild(confirmBtn);
+    selectionToolbar.appendChild(downloadBtn);
+    selectionToolbar.appendChild(editBtn);
+    selectionToolbar.appendChild(copyBtn);
 
     // 创建 8 个控制点
     const handlePositions = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -1472,9 +1500,16 @@
   }
 
   /**
-   * 确认选区并截图
+   * 确认选区并截图（原有函数，保留兼容）
    */
   function confirmSelection() {
+    captureAndCopy();
+  }
+
+  /**
+   * 获取当前选区数据
+   */
+  function getSelectionData() {
     // 停止自动滚动
     if (autoScrollInterval) {
       clearInterval(autoScrollInterval);
@@ -1507,11 +1542,9 @@
       };
 
       // 限制选区宽度不超过容器的 clientWidth（不包含滚动条）
-      // 计算选区右边界在容器内的位置
       const selectionRightInContainer = docCoords.x + finalWidth;
       const containerContentWidth = container.scrollWidth;
 
-      // 如果选区右边超出了容器内容区域，裁剪选区
       if (selectionRightInContainer > containerContentWidth) {
         finalWidth = containerContentWidth - docCoords.x;
       }
@@ -1532,25 +1565,107 @@
       height: finalHeight
     };
 
-    // 如果选区太小，忽略
+    // 如果选区太小，返回 null
     if (rect.width < 10 || rect.height < 10) {
-      removeSelectionOverlay();
-      return;
+      return null;
     }
 
-    // 发送选区信息到 background
-    chrome.runtime.sendMessage({
-      action: 'scrollSelectionComplete',
-      rect: rect,
+    return {
+      rect,
       viewportHeight: window.innerHeight,
       viewportWidth: window.innerWidth,
       scrollHeight: container ? container.scrollHeight : Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
       devicePixelRatio: window.devicePixelRatio || 1,
-      containerInfo: containerInfo,
-      currentScroll: currentScroll
-    });
+      containerInfo,
+      currentScroll
+    };
+  }
+
+  /**
+   * 截图并复制到剪贴板
+   */
+  function captureAndCopy() {
+    console.log('[ScrollCapture] captureAndCopy called');
+    const data = getSelectionData();
+    console.log('[ScrollCapture] getSelectionData result:', data ? 'valid' : 'null');
+    if (!data) {
+      removeSelectionOverlay();
+      return;
+    }
 
     removeSelectionOverlay();
+
+    console.log('[ScrollCapture] Sending captureSelection message with operation: copy');
+    chrome.runtime.sendMessage({
+      action: 'captureSelection',
+      operation: 'copy',
+      ...data
+    }, (response) => {
+      console.log('[ScrollCapture] captureSelection response:', response);
+      if (chrome.runtime.lastError) {
+        console.error('[ScrollCapture] Copy failed:', chrome.runtime.lastError);
+        showToast('截图失败', 'error');
+      } else if (!response || !response.success) {
+        console.error('[ScrollCapture] Copy failed:', response?.error);
+        showToast('截图失败: ' + (response?.error || '未知错误'), 'error');
+      }
+    });
+  }
+
+  /**
+   * 截图并下载
+   */
+  function captureAndDownload() {
+    const data = getSelectionData();
+    console.log('[ScrollCapture] captureAndDownload called, data:', data ? 'valid' : 'null');
+    if (!data) {
+      removeSelectionOverlay();
+      return;
+    }
+
+    removeSelectionOverlay();
+
+    chrome.runtime.sendMessage({
+      action: 'captureSelection',
+      operation: 'download',
+      ...data
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('[ScrollCapture] Download failed:', chrome.runtime.lastError);
+        showToast('截图失败', 'error');
+      } else if (!response || !response.success) {
+        console.error('[ScrollCapture] Download failed:', response?.error);
+        showToast('截图失败: ' + (response?.error || '未知错误'), 'error');
+      }
+    });
+  }
+
+  /**
+   * 截图并编辑
+   */
+  function captureAndEdit() {
+    const data = getSelectionData();
+    console.log('[ScrollCapture] captureAndEdit called, data:', data ? 'valid' : 'null');
+    if (!data) {
+      removeSelectionOverlay();
+      return;
+    }
+
+    removeSelectionOverlay();
+
+    chrome.runtime.sendMessage({
+      action: 'captureSelection',
+      operation: 'edit',
+      ...data
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('[ScrollCapture] Edit failed:', chrome.runtime.lastError);
+        showToast('截图失败', 'error');
+      } else if (!response || !response.success) {
+        console.error('[ScrollCapture] Edit failed:', response?.error);
+        showToast('截图失败: ' + (response?.error || '未知错误'), 'error');
+      }
+    });
   }
 
   /**
@@ -1810,6 +1925,16 @@
         sendResponse({ success: true });
         break;
 
+      case 'showToast':
+        showToast(message.message);
+        sendResponse({ success: true });
+        break;
+
+      case 'openEditor':
+        openImageEditor(message.dataUrl, message.dimensions);
+        sendResponse({ success: true });
+        break;
+
       case 'showBatchProgress':
         showBatchProgressPanel(message.current, message.total, message.status);
         sendResponse({ success: true });
@@ -1835,7 +1960,7 @@
   // ============================================
 
   /**
-   * 显示截图预览（直接打开编辑器）
+   * 显示截图预览（直接打开编辑器，用于全页/可视区域截图）
    */
   function showPreviewPanel(dataUrl, dimensions) {
     openImageEditor(dataUrl, dimensions);
@@ -1915,32 +2040,57 @@
   /**
    * 显示提示消息
    */
-  function showToast(message) {
+  function showToast(message, type = 'success') {
+    // 移除已存在的 toast
+    const existingToast = document.getElementById('scroll-capture-toast');
+    if (existingToast) existingToast.remove();
+
     const toast = document.createElement('div');
+    toast.id = 'scroll-capture-toast';
+
+    // 根据类型选择图标和颜色
+    const isSuccess = type === 'success';
+    const bgColor = isSuccess ? 'rgba(7, 193, 96, 0.95)' : 'rgba(25, 25, 25, 0.95)';
+    const icon = isSuccess
+      ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>`
+      : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+
     toast.style.cssText = `
       position: fixed;
-      bottom: 20px;
+      top: 50%;
       left: 50%;
-      transform: translateX(-50%);
-      background: rgba(25, 25, 25, 0.9);
+      transform: translate(-50%, -50%) scale(0.9);
+      background: ${bgColor};
       color: white;
-      padding: 10px 20px;
-      border-radius: 8px;
-      font-size: 14px;
+      padding: 16px 24px;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 500;
       z-index: 2147483647;
       font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-      animation: fadeIn 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      opacity: 0;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     `;
-    toast.innerHTML = `
-      ${message}
-      <style>@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }</style>
-    `;
+
+    toast.innerHTML = `${icon}<span>${message}</span>`;
     document.body.appendChild(toast);
+
+    // 触发动画
+    requestAnimationFrame(() => {
+      toast.style.opacity = '1';
+      toast.style.transform = 'translate(-50%, -50%) scale(1)';
+    });
+
+    // 自动消失
     setTimeout(() => {
       toast.style.opacity = '0';
-      toast.style.transition = 'opacity 0.2s';
-      setTimeout(() => toast.remove(), 200);
-    }, 2000);
+      toast.style.transform = 'translate(-50%, -50%) scale(0.9)';
+      setTimeout(() => toast.remove(), 250);
+    }, 1500);
   }
 
   // ============================================

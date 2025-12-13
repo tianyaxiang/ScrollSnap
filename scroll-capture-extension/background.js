@@ -300,11 +300,13 @@ async function sendMessageToTab(tabId, message) {
   } catch (error) {
     // Content script可能未加载，对于重要消息尝试注入后重试
     const importantActions = [
-      'showPreview', 
-      'startSelection', 
-      'showBatchProgress', 
+      'showPreview',
+      'startSelection',
+      'showBatchProgress',
       'showBatchResults',
-      'hideBatchProgress'
+      'hideBatchProgress',
+      'showToast',
+      'openEditor'
     ];
     if (importantActions.includes(message.action)) {
       try {
@@ -726,9 +728,71 @@ async function handleMessage(message, sender) {
     }
 
     case 'captureSelection': {
-      // 选区截图由content script处理后回调
-      const { rect, tabId } = params;
-      return await captureSelectionArea(tabId || sender.tab?.id, rect, params.format, params.quality);
+      // 选区截图，支持 copy/download/edit 三种操作
+      const tabId = params.tabId || sender.tab?.id;
+      if (!tabId) return { success: false, error: 'NO_TAB_ID' };
+
+      // 判断是新的带 operation 的调用还是旧的调用
+      if (params.operation) {
+        // 新的调用方式，带 operation 参数
+        console.log('[captureSelection] Starting capture with operation:', params.operation);
+
+        const result = await captureScrollSelection(
+          tabId,
+          params.rect,
+          params.viewportHeight,
+          params.viewportWidth,
+          params.devicePixelRatio || 1,
+          params.format || 'png',
+          params.quality || 92,
+          params.containerInfo,
+          params.currentScroll
+        );
+
+        console.log('[captureSelection] Capture result:', result.success, result.error);
+
+        if (result.success) {
+          // 保存最后截图
+          await chrome.storage.local.set({
+            lastCapture: {
+              dataUrl: result.dataUrl,
+              dimensions: result.dimensions,
+              timestamp: Date.now()
+            }
+          });
+
+          // 根据操作类型执行不同动作
+          switch (params.operation) {
+            case 'copy':
+              const copyResult = await copyToClipboard(result.dataUrl);
+              console.log('[captureSelection] Copy result:', copyResult);
+              if (copyResult.success) {
+                await sendMessageToTab(tabId, { action: 'showToast', message: '已复制到剪贴板' });
+              } else {
+                await sendMessageToTab(tabId, { action: 'showToast', message: '复制失败' });
+              }
+              break;
+
+            case 'download':
+              await downloadImage(result.dataUrl, `screenshot_${Date.now()}.png`, params.format || 'png');
+              await sendMessageToTab(tabId, { action: 'showToast', message: '已开始下载' });
+              break;
+
+            case 'edit':
+              await sendMessageToTab(tabId, {
+                action: 'openEditor',
+                dataUrl: result.dataUrl,
+                dimensions: result.dimensions
+              });
+              break;
+          }
+        }
+        return result;
+      } else {
+        // 旧的调用方式，兼容 popup 调用
+        const { rect } = params;
+        return await captureSelectionArea(tabId, rect, params.format, params.quality);
+      }
     }
 
     case 'download': {
