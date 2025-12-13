@@ -110,6 +110,9 @@ async function captureFullPage(tabId, format = 'png', quality = 92, onProgress =
     // 保存原始滚动位置
     const originalScrollY = scrollInfo.currentScrollY;
 
+    // 隐藏滚动条
+    await hideScrollbar(tabId);
+
     // 显示进度指示器（仅当 showPageProgress 为 true 时）
     if (showPageProgress) {
       await sendMessageToTab(tabId, { action: 'showProgress', percent: 0 });
@@ -207,6 +210,9 @@ async function captureFullPage(tabId, format = 'png', quality = 92, onProgress =
       await restoreFixedElements(tabId);
     }
 
+    // 恢复滚动条
+    await restoreScrollbar(tabId);
+
     // 恢复原始滚动位置
     await scrollToPosition(tabId, originalScrollY);
 
@@ -217,7 +223,7 @@ async function captureFullPage(tabId, format = 'png', quality = 92, onProgress =
 
     // 拼接截图
     const finalDataUrl = await stitchScreenshots(screenshots, captureWidth, totalHeight, captureViewportHeight, format, quality);
-    
+
     return {
       success: true,
       dataUrl: finalDataUrl,
@@ -225,9 +231,10 @@ async function captureFullPage(tabId, format = 'png', quality = 92, onProgress =
     };
   } catch (error) {
     console.error('Capture full page failed:', error);
-    // 确保恢复 fixed/sticky 元素和隐藏进度指示器
+    // 确保恢复 fixed/sticky 元素、滚动条和隐藏进度指示器
     try {
       await restoreFixedElements(tabId);
+      await restoreScrollbar(tabId);
       if (showPageProgress) {
         await sendMessageToTab(tabId, { action: 'hideProgress' });
       }
@@ -369,16 +376,82 @@ async function restoreFixedElements(tabId) {
     target: { tabId },
     func: () => {
       if (!window.__scrollCaptureHiddenElements) return;
-      
+
       for (const item of window.__scrollCaptureHiddenElements) {
         // 恢复原始的 visibility 值
         item.element.style.visibility = item.originalVisibility;
       }
-      
+
       console.log('[ScrollCapture] Restored', window.__scrollCaptureHiddenElements.length, 'fixed/sticky elements');
-      
+
       // 清理
       delete window.__scrollCaptureHiddenElements;
+    }
+  });
+}
+
+/**
+ * 隐藏页面滚动条
+ * @param {number} tabId
+ */
+async function hideScrollbar(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      // 保存原始样式
+      window.__scrollCaptureOriginalOverflow = {
+        htmlOverflow: document.documentElement.style.overflow,
+        htmlOverflowY: document.documentElement.style.overflowY,
+        bodyOverflow: document.body.style.overflow,
+        bodyOverflowY: document.body.style.overflowY,
+        htmlScrollbarWidth: document.documentElement.style.scrollbarWidth,
+        bodyScrollbarWidth: document.body.style.scrollbarWidth
+      };
+
+      // 隐藏滚动条但保持可滚动
+      // 方法1: 使用 scrollbar-width (Firefox, Chrome 121+)
+      document.documentElement.style.scrollbarWidth = 'none';
+      document.body.style.scrollbarWidth = 'none';
+
+      // 方法2: 添加 CSS 样式隐藏 webkit 滚动条
+      const style = document.createElement('style');
+      style.id = '__scroll-capture-hide-scrollbar';
+      style.textContent = `
+        html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0 !important; height: 0 !important; }
+        html, body { scrollbar-width: none !important; }
+      `;
+      document.head.appendChild(style);
+
+      console.log('[ScrollCapture] Scrollbar hidden');
+    }
+  });
+}
+
+/**
+ * 恢复页面滚动条
+ * @param {number} tabId
+ */
+async function restoreScrollbar(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      // 移除注入的样式
+      const style = document.getElementById('__scroll-capture-hide-scrollbar');
+      if (style) style.remove();
+
+      // 恢复原始样式
+      if (window.__scrollCaptureOriginalOverflow) {
+        const orig = window.__scrollCaptureOriginalOverflow;
+        document.documentElement.style.overflow = orig.htmlOverflow;
+        document.documentElement.style.overflowY = orig.htmlOverflowY;
+        document.body.style.overflow = orig.bodyOverflow;
+        document.body.style.overflowY = orig.bodyOverflowY;
+        document.documentElement.style.scrollbarWidth = orig.htmlScrollbarWidth;
+        document.body.style.scrollbarWidth = orig.bodyScrollbarWidth;
+        delete window.__scrollCaptureOriginalOverflow;
+      }
+
+      console.log('[ScrollCapture] Scrollbar restored');
     }
   });
 }
@@ -796,9 +869,9 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
 
     // 判断是否使用内部滚动容器
     const useContainer = containerInfo && containerInfo.scrollHeight > containerInfo.clientHeight;
-    
+
     // 保存原始滚动位置
-    const originalScroll = useContainer 
+    const originalScroll = useContainer
       ? await getContainerScrollPosition(tabId)
       : await getPageScrollPosition(tabId);
 
@@ -810,12 +883,15 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
 
     // 确定有效的视口高度和容器偏移
     let effectiveViewportHeight = viewportHeight;
+    let effectiveViewportWidth = viewportWidth;
     let containerViewportTop = 0;
     let containerViewportLeft = 0;
-    
+
     if (useContainer) {
-      // 使用 clientHeight 而不是 viewportHeight，因为 clientHeight 不包含 border
+      // 使用 clientHeight/clientWidth 而不是 viewportHeight/viewportWidth
+      // 因为 clientHeight/clientWidth 不包含滚动条
       effectiveViewportHeight = containerInfo.clientHeight;
+      effectiveViewportWidth = containerInfo.clientWidth;
       containerViewportTop = containerInfo.viewportTop;
       containerViewportLeft = containerInfo.viewportLeft;
     }
@@ -897,16 +973,29 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
       }
       
       const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, captureOptions);
-      
+
+      // 计算实际裁剪宽度，确保不超过容器可视区域（不包含滚动条）
+      let actualCropWidth = selectionWidth;
+      if (useContainer) {
+        // 获取当前滚动位置用于计算
+        const scrollForWidth = initialScroll || await getContainerScrollPosition(tabId);
+        // 裁剪区域右边界不能超过容器的 clientWidth
+        const maxCropRight = effectiveViewportWidth;
+        const cropRight = (selectionLeft - scrollForWidth.x) + selectionWidth;
+        if (cropRight > maxCropRight) {
+          actualCropWidth = maxCropRight - (selectionLeft - scrollForWidth.x);
+        }
+      }
+
       const viewportRect = {
         x: cropX,
         y: cropY,
-        width: selectionWidth,
+        width: actualCropWidth,
         height: selectionHeight
       };
 
       const croppedDataUrl = await cropImage(dataUrl, viewportRect, format, quality, dpr);
-      
+
       // 恢复滚动位置
       if (useContainer) {
         await scrollContainerTo(tabId, originalScroll.x, originalScroll.y);
@@ -917,15 +1006,24 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
       return {
         success: true,
         dataUrl: croppedDataUrl,
-        dimensions: { width: Math.round(selectionWidth), height: Math.round(selectionHeight) }
+        dimensions: { width: Math.round(actualCropWidth), height: Math.round(selectionHeight) }
       };
     }
 
     // 需要滚动截图
     await sendMessageToTab(tabId, { action: 'showProgress', percent: 0 });
-    
+
     // 选区截图时，所有屏幕都隐藏 fixed/sticky 元素
     await hideFixedElements(tabId);
+
+    // 计算实际裁剪宽度（在开始滚动前计算，确保所有截图使用相同的宽度）
+    let finalCropWidth = selectionWidth;
+    if (useContainer) {
+      // 选区宽度不能超过容器可视区域宽度（不包含滚动条）
+      if (selectionWidth > effectiveViewportWidth) {
+        finalCropWidth = effectiveViewportWidth;
+      }
+    }
 
     const screenshots = [];
     let capturedHeight = 0;
@@ -983,17 +1081,28 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
         cropX, cropY,
         stepHeight
       });
-      
+
       // 确保 cropY 不为负数（可能由于滚动不精确）
       if (cropY < 0) {
         console.warn('[captureScrollSelection] cropY is negative, adjusting');
         cropY = 0;
       }
+
+      // 计算实际裁剪宽度，确保不超过容器可视区域（不包含滚动条）
+      let actualCropWidth = finalCropWidth;
+      if (useContainer) {
+        // 裁剪区域右边界不能超过容器的 clientWidth
+        const maxCropRight = effectiveViewportWidth;
+        const cropRight = (selectionLeft - actualScroll.x) + finalCropWidth;
+        if (cropRight > maxCropRight) {
+          actualCropWidth = maxCropRight - (selectionLeft - actualScroll.x);
+        }
+      }
       
       const cropRect = {
         x: cropX,
         y: cropY,
-        width: selectionWidth,
+        width: actualCropWidth,
         height: captureHeight
       };
 
@@ -1024,14 +1133,14 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
     await sendMessageToTab(tabId, { action: 'hideProgress' });
 
     // 拼接截图
-    const finalWidth = Math.round(selectionWidth * dpr);
+    const finalWidth = Math.round(finalCropWidth * dpr);
     const finalHeight = Math.round(selectionHeight * dpr);
     const finalDataUrl = await stitchSelectionScreenshots(screenshots, finalWidth, finalHeight, dpr, format, quality);
 
     return {
       success: true,
       dataUrl: finalDataUrl,
-      dimensions: { width: Math.round(selectionWidth), height: Math.round(selectionHeight) }
+      dimensions: { width: Math.round(finalCropWidth), height: Math.round(selectionHeight) }
     };
   } catch (error) {
     console.error('Capture scroll selection failed:', error);
@@ -1706,7 +1815,7 @@ async function captureBatchTab(tabId, format = 'png', quality = 92) {
 async function captureFullPageForBatch(tabId, format = 'png', quality = 92) {
   try {
     const tab = await chrome.tabs.get(tabId);
-    
+
     if (isRestrictedPage(tab.url)) {
       return { success: false, error: 'RESTRICTED_PAGE' };
     }
@@ -1719,25 +1828,28 @@ async function captureFullPageForBatch(tabId, format = 'png', quality = 92) {
 
     const { scrollHeight, viewportHeight, viewportWidth, devicePixelRatio } = scrollInfo;
     const dpr = devicePixelRatio || 1;
-    
+
     // 保存原始滚动位置
     const originalScrollY = scrollInfo.currentScrollY;
+
+    // 隐藏滚动条
+    await hideScrollbar(tabId);
 
     // 先滚动到顶部并捕获第一张
     await scrollToPosition(tabId, 0);
     await delay(300);
-    
+
     const captureOptions = { format: format === 'jpeg' ? 'jpeg' : 'png' };
     if (format === 'jpeg') captureOptions.quality = quality;
-    
+
     const firstDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, captureOptions);
     const firstImgDimensions = await getImageDimensions(firstDataUrl);
-    
+
     const captureWidth = firstImgDimensions.width;
     const captureViewportHeight = firstImgDimensions.height;
     const totalHeight = Math.ceil(scrollHeight * dpr);
     const totalScrolls = Math.ceil(scrollHeight / viewportHeight);
-    
+
     const screenshots = [{
       dataUrl: firstDataUrl,
       y: 0,
@@ -1754,18 +1866,18 @@ async function captureFullPageForBatch(tabId, format = 'png', quality = 92) {
     for (let i = 1; i < totalScrolls; i++) {
       const scrollY = i * viewportHeight;
       const isLastScroll = i === totalScrolls - 1;
-      
+
       await scrollToPosition(tabId, scrollY);
       await delay(550);
-      
+
       const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, captureOptions);
-      
+
       let captureHeight = captureViewportHeight;
       if (isLastScroll) {
         captureHeight = totalHeight - (i * captureViewportHeight);
         if (captureHeight <= 0) captureHeight = captureViewportHeight;
       }
-      
+
       screenshots.push({
         dataUrl,
         y: i * captureViewportHeight,
@@ -1779,12 +1891,15 @@ async function captureFullPageForBatch(tabId, format = 'png', quality = 92) {
       await restoreFixedElements(tabId);
     }
 
+    // 恢复滚动条
+    await restoreScrollbar(tabId);
+
     // 恢复原始滚动位置
     await scrollToPosition(tabId, originalScrollY);
 
     // 拼接截图
     const finalDataUrl = await stitchScreenshots(screenshots, captureWidth, totalHeight, captureViewportHeight, format, quality);
-    
+
     return {
       success: true,
       dataUrl: finalDataUrl,
@@ -1794,6 +1909,7 @@ async function captureFullPageForBatch(tabId, format = 'png', quality = 92) {
     console.error('Capture full page for batch failed:', error);
     try {
       await restoreFixedElements(tabId);
+      await restoreScrollbar(tabId);
     } catch (e) {}
     return { success: false, error: error.message };
   }

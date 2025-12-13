@@ -1483,18 +1483,8 @@
 
     // 将视口坐标转换回文档坐标
     const docCoords = clientToDocCoords(selectionLeft, selectionTop);
-    const rect = {
-      x: docCoords.x,
-      y: docCoords.y,
-      width: selectionWidth,
-      height: selectionHeight
-    };
-
-    // 如果选区太小，忽略
-    if (rect.width < 10 || rect.height < 10) {
-      removeSelectionOverlay();
-      return;
-    }
+    let finalWidth = selectionWidth;
+    let finalHeight = selectionHeight;
 
     // 获取滚动容器信息
     const container = isSelectingInContainer ? activeContainer : null;
@@ -1515,6 +1505,37 @@
         viewportWidth: containerRect.width,
         viewportHeight: containerRect.height
       };
+
+      // 限制选区宽度不超过容器的 clientWidth（不包含滚动条）
+      // 计算选区右边界在容器内的位置
+      const selectionRightInContainer = docCoords.x + finalWidth;
+      const containerContentWidth = container.scrollWidth;
+
+      // 如果选区右边超出了容器内容区域，裁剪选区
+      if (selectionRightInContainer > containerContentWidth) {
+        finalWidth = containerContentWidth - docCoords.x;
+      }
+
+      // 同样限制选区高度不超过容器的内容高度
+      const selectionBottomInContainer = docCoords.y + finalHeight;
+      const containerContentHeight = container.scrollHeight;
+
+      if (selectionBottomInContainer > containerContentHeight) {
+        finalHeight = containerContentHeight - docCoords.y;
+      }
+    }
+
+    const rect = {
+      x: docCoords.x,
+      y: docCoords.y,
+      width: finalWidth,
+      height: finalHeight
+    };
+
+    // 如果选区太小，忽略
+    if (rect.width < 10 || rect.height < 10) {
+      removeSelectionOverlay();
+      return;
     }
 
     // 发送选区信息到 background
