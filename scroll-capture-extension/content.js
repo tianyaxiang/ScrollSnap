@@ -1672,12 +1672,15 @@
   // ============================================
 
   let progressContainer = null;
+  let progressPercent = 0; // 保存当前进度值
 
   /**
    * 显示进度指示器
    * @param {number} percent - 进度百分比 (0-100)
    */
   function showProgressIndicator(percent) {
+    progressPercent = percent; // 保存进度值
+
     if (!progressContainer) {
       progressContainer = document.createElement('div');
       progressContainer.id = 'scroll-capture-progress';
@@ -1731,6 +1734,26 @@
     }
   }
 
+  /**
+   * 临时隐藏进度条（用于截图时）
+   * 将进度条移出视口而不是移除，以便快速恢复
+   */
+  function tempHideProgress() {
+    if (progressContainer) {
+      progressContainer.style.transform = 'translateX(200%)';
+      progressContainer.style.transition = 'none';
+    }
+  }
+
+  /**
+   * 恢复临时隐藏的进度条
+   */
+  function tempShowProgress() {
+    if (progressContainer) {
+      progressContainer.style.transform = 'translateX(0)';
+    }
+  }
+
   // ============================================
   // 消息监听
   // ============================================
@@ -1769,6 +1792,16 @@
 
       case 'hideProgress':
         hideProgressIndicator();
+        sendResponse({ success: true });
+        break;
+
+      case 'tempHideProgress':
+        tempHideProgress();
+        sendResponse({ success: true });
+        break;
+
+      case 'tempShowProgress':
+        tempShowProgress();
         sendResponse({ success: true });
         break;
 

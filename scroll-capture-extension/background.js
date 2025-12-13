@@ -1035,10 +1035,10 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
       // 计算当前需要捕获的高度
       const remainingHeight = selectionHeight - capturedHeight;
       const captureHeight = Math.min(stepHeight, remainingHeight);
-      
+
       // 计算滚动位置：让选区的当前部分出现在容器/视口顶部
       const targetScrollY = selectionTop + capturedHeight;
-      
+
       if (useContainer) {
         await scrollContainerTo(tabId, 0, targetScrollY);
       } else {
@@ -1047,12 +1047,19 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
       await delay(550);
 
       // 获取实际滚动位置
-      const actualScroll = useContainer 
+      const actualScroll = useContainer
         ? await getContainerScrollPosition(tabId)
         : await getPageScrollPosition(tabId);
-      
+
+      // 截图前临时隐藏进度条（移出视口）
+      await sendMessageToTab(tabId, { action: 'tempHideProgress' });
+      await delay(30);
+
       const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, captureOptions);
-      
+
+      // 截图后恢复进度条
+      await sendMessageToTab(tabId, { action: 'tempShowProgress' });
+
       // 计算裁剪区域
       // 关键：cropY 应该是选区当前部分在视口中的位置
       let cropX, cropY;
@@ -1107,7 +1114,7 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
       };
 
       const croppedDataUrl = await cropImage(dataUrl, cropRect, format, quality, dpr);
-      
+
       screenshots.push({
         dataUrl: croppedDataUrl,
         y: capturedHeight * dpr,
@@ -1116,9 +1123,9 @@ async function captureScrollSelection(tabId, rect, viewportHeight, viewportWidth
 
       capturedHeight += captureHeight;
 
-      // 更新进度
-      const progress = Math.round((capturedHeight / selectionHeight) * 100);
-      await sendMessageToTab(tabId, { action: 'updateProgress', percent: progress });
+      // 更新进度（进度条已在截图后显示，这里更新百分比）
+      const finalProgress = Math.round((capturedHeight / selectionHeight) * 100);
+      await sendMessageToTab(tabId, { action: 'updateProgress', percent: finalProgress });
     }
 
     // 恢复 fixed/sticky 元素的可见性
